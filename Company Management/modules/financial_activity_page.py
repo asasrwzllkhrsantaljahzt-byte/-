@@ -158,9 +158,14 @@ def _render_voucher_fields(key, operation, edit_row):
             names = {row["id"]: row["name"] for row in parties}
             index = ids.index(party_id) if is_edit and party_type == item["party_type"] and party_id in ids else 0
             party_id = st.selectbox("الجهة", ids, index=index, format_func=names.get, key=key + "party")
-    elif operation in ("operating_expense", "owner_draw", "other_receipt"):
+    elif operation in ("operating_expense", "owner_draw"):
         party_type = "other"
         other_name = st.text_input("اسم المصروف أو الجهة *", value=other_name, key=key + "party_name")
+    elif operation == "other_receipt":
+        if party_type == "other":
+            other_name = st.text_input("اسم الجهة *", value=other_name, key=key + "party_name")
+        else:
+            st.caption(f"الجهة: {item['party_name']}")
 
     cols = st.columns(2)
     voucher_date = cols[0].date_input("التاريخ", value=date.fromisoformat(item["voucher_date"]) if item else date.today(),

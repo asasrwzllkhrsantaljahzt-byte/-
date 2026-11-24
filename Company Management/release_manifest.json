@@ -1,5 +1,5 @@
 {
- "build": "31",
+ "build": "32",
  "files": {
   "agreements.py": "1098a48c9f07ca1a6dc1d023a566b92998bb5d0aa32da33b34efcb89f24f662c",
   "alerts.py": "a48ba52668baa2a2b2363561c9a9220576e5797eb0ce25b99d32fe04879fad71",
@@ -43,7 +43,7 @@
   "modules/employees.py": "f144d8b69c6d732d4e61d923b0fc56890e06379121ecd36486dec94a614759f8",
   "modules/entities.py": "4581c394c52f3ef02a493e1eafbf3b0fa6f116e397750fd6a75e7f2c93f035ca",
   "modules/finance_page.py": "21c14d3f252e5a24c12a04456a724e17b1b39a0530b4c869dff7d3c9233e9da6",
-  "modules/financial_activity_page.py": "1655e259081d30fd6b5008f4ea8ac1b9b1a481dbc69f45c80b34a6ed3d119424",
+  "modules/financial_activity_page.py": "985a090945b6ebee60fd272dc496b5c796c47577404917c47f4d79a53e6dabf8",
   "modules/invoices_page.py": "cd83105889d5a33e47b3820cb37a2b442e219eaa3893a58bf8bc9e0e9afc41c3",
   "modules/master_data_page.py": "767d71ba0b44ece3f3adede2ca2f883048740b2e85ed17fa12858544c3aab6e5",
   "modules/month_close_page.py": "0725a79f6b8b425e60f95463b96c717835d1530b7a1d15c31f9f759409a705a5",
