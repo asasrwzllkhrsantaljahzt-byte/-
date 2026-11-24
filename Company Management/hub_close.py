@@ -82,9 +82,18 @@ def balances_df(month=None) -> pd.DataFrame:
 
 def year_df(year) -> pd.DataFrame:
     rows = []
-    for m in sorted(x for x in E.month_options() if x.startswith(str(year))):
+    cash = V.other_payment_totals()
+    months = {x for x in E.month_options() if x.startswith(str(year))}
+    months.update(m for m in cash if m.startswith(str(year)))
+    for m in sorted(months):
         t = E.compute_month(m)["totals"]
-        if t["employees"] or t["transferred"]:
+        operating = cash.get(m, {}).get("operating_expense", 0.0)
+        owner_draw = cash.get(m, {}).get("owner_draw", 0.0)
+        adjusted_profit = round(t["margin"] - operating, 2)
+        if t["employees"] or t["transferred"] or operating or owner_draw:
             rows.append({"الشهر": m, "الموظفات": t["employees"], "حوّل العميل": t["transferred"], "الإيراد الفعلي": t["revenue"],
-                         "المردود": t["refund"], "الصافي": t["net"], "عمولة المناديب": t["rep_due"], "هامش الشركة": t["margin"]})
+                         "المردود": t["refund"], "الصافي": t["net"], "عمولة المناديب": t["rep_due"],
+                         "هامش الشركة قبل المصروفات": t["margin"], "المصروفات التشغيلية": operating,
+                         "صافي الربح بعد المصروفات": adjusted_profit, "مسحوبات المالك (تسوية سنوية)": owner_draw,
+                         "المتبقي بعد المسحوبات": round(adjusted_profit - owner_draw, 2)})
     return pd.DataFrame(rows)

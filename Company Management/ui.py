@@ -210,9 +210,8 @@ def toast_flash(key: str):
 
 # ---------------------------------------------------------------- navigation
 FINANCE_GROUPS = [
-    ("التحويلات والحساب الشهري", ("التحويلات والحساب الشهري",)),
+    ("الحركات المالية", ("التحويلات والحساب الشهري", "التحصيل والمدفوعات", "السندات")),
     ("مراجعة وإقفال الشهر", ("مراجعة وإقفال الشهر",)),
-    ("التحصيل والمدفوعات والسندات", ("التحصيل والمدفوعات", "السندات")),
     ("كشوف الحسابات", ("كشوف الحسابات",)),
     ("فواتير العملاء", ("فواتير العملاء",)),
     ("التقارير المالية والإدارية", ("التقارير المالية والإدارية",)),
@@ -385,6 +384,18 @@ def excel_button(df, filename: str, key: str, label: str = "⬇️ تصدير Ex
         df.to_excel(w, index=False, sheet_name="البيانات")
     st.download_button(label, out.getvalue(), file_name=f"{filename}.xlsx", key=key,
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def pdf_button(df, title: str, filename: str, key: str):
+    import exports
+    import app_settings
+
+    ok, reason = exports.pdf_available()
+    if not ok:
+        st.caption(f"تنزيل PDF غير متاح: {reason}")
+        return
+    content = exports.table_pdf(title, [(title, df)], org=app_settings.get("org_name"))
+    st.download_button("⬇️ تصدير PDF", content, file_name=f"{filename}.pdf", key=key, mime="application/pdf")
 
 
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬٫،", "01234567890123456789,.,")

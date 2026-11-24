@@ -8,7 +8,7 @@ import vouchers as V
 import security
 from db import query_all
 from modules import vouchers_page
-from ui import select_table, toast_flash, excel_button, row_action_bar
+from ui import select_table, toast_flash, excel_button, pdf_button, row_action_bar
 
 _PAY_TYPES = [("contractor", "المتعهدون وعمولات خارجية"), ("representative", "المناديب"), ("company", "العملاء (المردود)")]
 
@@ -33,6 +33,7 @@ def _collect_tab(can):
                         "نصيبها (المكافأة)": r["bonus_due"], "المطلوب منها": r["owed"],
                         "المحصَّل": r["collected"], "الفرق": r["diff"]} for r in rows])
     excel_button(df, f"collections_{month}", "col_xl")
+    pdf_button(df, "تحصيلات الموظفين", f"collections_{month}", "col_pdf")
     pos = select_table(df, f"col_t_{month}")
     toast_flash(vouchers_page._FLASH)
     if pos is None:
@@ -44,9 +45,8 @@ def _collect_tab(can):
     if actions["view"]:
         st.info(f"الموظفة: {r['employee']} — المطلوب: {r['owed']:,.2f} — المحصل: {r['collected']:,.2f}")
     if actions["print"]:
-        st.download_button("طباعة التحصيل", pd.DataFrame([r]).to_csv(index=False).encode("utf-8-sig"),
-                           file_name=f"collection_{r['employee_id']}.csv", mime="text/csv",
-                           key=f"col_print_{r['employee_id']}")
+        pdf_button(df.iloc[[pos]], "تحصيل الموظف", f"collection_{r['employee_id']}",
+                   f"col_print_{r['employee_id']}")
     if can and st.button("➕ تسجيل تحصيل من الموظفة", type="primary", key="col_go"):
         vouchers_page.issue_dialog("receipt", "employee", r["employee_id"], "col", month, max(r["diff"], 0) or None)
     st.caption("الفرق الموجب = لم تُعد كامل المبلغ بعد. السالب = أعادت أكثر من المطلوب.")
@@ -68,6 +68,7 @@ def _pay_tab(can):
     m1.metric(labels[0], f"{tot_d:,.2f}"); m2.metric(labels[1], f"{tot_s:,.2f}"); m3.metric(labels[2], f"{tot_d - tot_s:,.2f}")
     df = pd.DataFrame([{"الاسم": b["name"], labels[0]: b["due"], labels[1]: b["settled"], labels[2]: b["balance"]} for b in bal])
     excel_button(df, f"payables_{ptype}", "pay_xl")
+    pdf_button(df, "المدفوعات والمستحقات", f"payables_{ptype}", "pay_pdf")
     pos = select_table(df, f"pay_t_{ptype}_{month}")
     toast_flash(vouchers_page._FLASH)
     if pos is None:
@@ -78,9 +79,8 @@ def _pay_tab(can):
     if actions["view"]:
         st.info(f"{b['name']} — المستحق: {b['due']:,.2f} — المصروف: {b['settled']:,.2f} — المتبقي: {b['balance']:,.2f}")
     if actions["print"]:
-        st.download_button("طباعة كشف المصروفات", pd.DataFrame([b]).to_csv(index=False).encode("utf-8-sig"),
-                           file_name=f"payable_{b['id']}.csv", mime="text/csv",
-                           key=f"pay_print_{ptype}_{b['id']}")
+        pdf_button(df.iloc[[pos]], "كشف المستحقات", f"payable_{b['id']}",
+                   f"pay_print_{ptype}_{b['id']}")
     if can and st.button(f"➕ إذن صرف إلى {b['name']}", type="primary", key="pay_go"):
         vouchers_page.issue_dialog("payment", ptype, b["id"], "pay", mref, max(b["balance"], 0) or None)
 

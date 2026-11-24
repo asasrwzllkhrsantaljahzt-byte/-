@@ -63,6 +63,16 @@ def main():
     res = E.compute_month("2026-10")
     assert len(C.companies_df(res)) == 1 and len(C.employees_df(res)) == 2 and len(C.totals_df(res)) == 11
     assert C.year_df(2026)["الشهر"].tolist() == ["2026-10", "2026-11"]
+    V.issue_voucher("payment", D(2026, 11, 5), "other", None, 50, other_name="مصروف تشغيل",
+                    entry_category="operating_expense")
+    V.issue_voucher("payment", D(2026, 11, 5), "other", None, 20, other_name="مسحوبات المالك",
+                    entry_category="owner_draw")
+    annual = C.year_df(2026).set_index("الشهر")
+    assert annual.loc["2026-11", "المصروفات التشغيلية"] == 50
+    assert annual.loc["2026-11", "مسحوبات المالك (تسوية سنوية)"] == 20
+    assert annual.loc["2026-11", "صافي الربح بعد المصروفات"] == round(annual.loc["2026-11", "هامش الشركة قبل المصروفات"] - 50, 2)
+    from modules import dashboard
+    dashboard._months_chart("2026-11")
     V.issue_voucher("payment", D(2026, 11, 5), "contractor", con, 50)
     bal = C.balances_df("2026-10")
     assert not bal.empty and set(bal.columns) == {"النوع", "الاسم", "المستحق", "المسدَّد", "المتبقي"}

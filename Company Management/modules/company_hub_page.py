@@ -112,14 +112,17 @@ def _dlg_rep(cid):
         cur = hub.current_rep(cid)
         if cur:
             st.info(f"المندوب الحالي: {cur['rep_name']} — {cur['percent']:g}% من {cur['start_date']}")
-        if not reps:
-            st.warning("لا يوجد مندوبون. أضف المندوب أولاً من صفحة «المندوبون».")
-            return
         k = f"hr{cid}_{_ver()}_"
         ids = [r["id"] for r in reps]
         names = {r["id"]: r["name"] for r in reps}
-        rid = st.selectbox("المندوب", ids, format_func=names.get, key=k + "rep",
-                           index=ids.index(cur["representative_id"]) if cur and cur["representative_id"] in ids else 0)
+        add_rep = st.checkbox("إضافة مندوب جديد هنا", value=not bool(reps), key=k + "add_rep")
+        if add_rep:
+            rep_name = st.text_input("اسم المندوب الجديد *", key=k + "rep_name")
+            rid = None
+        else:
+            rid = st.selectbox("المندوب", ids, format_func=names.get, key=k + "rep",
+                               index=ids.index(cur["representative_id"]) if cur and cur["representative_id"] in ids else 0)
+            rep_name = ""
         pct = number_field("النسبة % من صافي الشركة (ثابتة كل شهر)", k + "pct", value=cur["percent"] if cur else None,
                            minimum=0, maximum=100)
         start = _date_field("تاريخ بداية النسبة", k + "start")
@@ -129,6 +132,9 @@ def _dlg_rep(cid):
                 st.error("اكتب النسبة.")
                 return
             try:
+                if add_rep:
+                    from modules import entities, representatives
+                    rid, _ = entities.save_record(representatives.CFG, None, {"name": rep_name, "status": "active"})
                 msg = hub.set_rep(cid, rid, pct, start)
             except ValueError as ex:
                 st.error(str(ex))
@@ -172,19 +178,29 @@ def _terms_inputs(k, cur):
     e_names = {None: "— بدون —", **{r["id"]: r["name"] for r in externals}}
     a, b = st.columns(2)
     with a:
-        cid_sel = cur.get("contractor_id") if cur.get("contractor_id") in c_ids else None
-        con = st.selectbox("المتعهد", c_ids, index=c_ids.index(cid_sel), format_func=c_names.get, key=k + "con")
+        add_con = st.checkbox("إضافة متعهد جديد هنا", key=k + "add_con")
+        if add_con:
+            con_name = st.text_input("اسم المتعهد الجديد *", key=k + "con_name")
+            con = None
+        else:
+            cid_sel = cur.get("contractor_id") if cur.get("contractor_id") in c_ids else None
+            con = st.selectbox("المتعهد", c_ids, index=c_ids.index(cid_sel), format_func=c_names.get, key=k + "con")
+            con_name = ""
         con_c = number_field("عمولة المتعهد (شهرياً)", k + "conc", value=cur.get("contractor_commission") or None, minimum=0)
     with b:
-        eid_sel = cur.get("external_id") if cur.get("external_id") in e_ids else None
-        ext = st.selectbox("جهة العمولة الخارجية", e_ids, index=e_ids.index(eid_sel), format_func=e_names.get, key=k + "ext")
+        add_ext = st.checkbox("إضافة جهة عمولة جديدة هنا", key=k + "add_ext")
+        if add_ext:
+            ext_name = st.text_input("اسم جهة العمولة الجديدة *", key=k + "ext_name")
+            ext = None
+        else:
+            eid_sel = cur.get("external_id") if cur.get("external_id") in e_ids else None
+            ext = st.selectbox("جهة العمولة الخارجية", e_ids, index=e_ids.index(eid_sel), format_func=e_names.get, key=k + "ext")
+            ext_name = ""
         ext_c = number_field("العمولة الخارجية (شهرياً)", k + "extc", value=cur.get("external_commission") or None, minimum=0)
-    if len(c_ids) == 1:
-        st.caption("لا يوجد متعهدون. أضفهم من صفحة «المتعهدون» (النوع: متعهد).")
-    if len(e_ids) == 1:
-        st.caption("لا توجد جهات عمولة خارجية. أضفها من صفحة «المتعهدون» (النوع: عمولة خارجية).")
     t = {"basic_salary": basic, "actual_cost": cost, "bonus": bonus, "contractor_id": con,
-         "contractor_commission": con_c, "external_id": ext, "external_commission": ext_c}
+         "contractor_commission": con_c, "external_id": ext, "external_commission": ext_c,
+         "_add_contractor": add_con, "_contractor_name": con_name,
+         "_add_external": add_ext, "_external_name": ext_name}
     net = hub.calc(basic, cost, bonus, con_c, ext_c)["net"]
     m1, m2 = st.columns(2)
     m1.metric("الاسترداد", f"{refund_preview:,.2f}")
@@ -241,6 +257,23 @@ def _dlg_employee(cid, pid=None):
         terms.update({"start_date": start, "status": status, "end_date": end, "stop_reason": reason, "notes": notes})
         if st.button("💾 حفظ", type="primary", key=k + "save", use_container_width=True):
             try:
+                from modules import contractors as contractor_module, entities
+                if terms.pop("_add_contractor"):
+                    name = terms.pop("_contractor_name").strip()
+                    if not name:
+                        raise ValueError("اسم المتعهد مطلوب.")
+                    terms["contractor_id"], _ = entities.save_record(
+                        contractor_module.CFG, None, {"name": name, "kind": "contractor", "status": "active"})
+                else:
+                    terms.pop("_contractor_name")
+                if terms.pop("_add_external"):
+                    name = terms.pop("_external_name").strip()
+                    if not name:
+                        raise ValueError("اسم جهة العمولة الخارجية مطلوب.")
+                    terms["external_id"], _ = entities.save_record(
+                        contractor_module.CFG, None, {"name": name, "kind": "external", "status": "active"})
+                else:
+                    terms.pop("_external_name")
                 if pid:
                     emp.setdefault("email", (cur or {}).get("email"))
                     msg = hub.update_employee(pid, emp, terms)

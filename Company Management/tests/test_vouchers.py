@@ -82,6 +82,17 @@ def main():
     assert b"PAY-2026-0002" in V.voucher_html(p2).encode()
     assert db.query_one("SELECT COUNT(*) c FROM audit_log WHERE table_name='vouchers'")["c"] == 5
 
+    expense = V.issue_voucher("payment", D(2026, 4, 5), "other", None, 75, other_name="مصروف تشغيل",
+                               entry_category="operating_expense")
+    V.issue_voucher("payment", D(2026, 4, 5), "other", None, 20, other_name="مسحوبات المالك",
+                    entry_category="owner_draw")
+    replacement = V.replace_voucher(expense, D(2026, 4, 6), 80, "cash", "", "2026-04", "تصحيح",
+                                    "operating_expense", "تصحيح المبلغ", "مصروف تشغيل معدل")
+    assert db.query_one("SELECT status FROM vouchers WHERE id=?", (expense,))["status"] == "void"
+    updated = db.query_one("SELECT amount, party_name FROM vouchers WHERE id=?", (replacement,))
+    assert updated == {"amount": 80, "party_name": "مصروف تشغيل معدل"}
+    assert V.other_payment_totals()["2026-04"] == {"operating_expense": 80.0, "owner_draw": 20.0}
+
     pb = {r["name"]: r for r in V.party_balances("company")}
     assert pb["شركة العميل"]["due"] == 300 and pb["شركة العميل"]["balance"] == 300
     assert V.party_balances("company", "2026-04")[0]["due"] == 0

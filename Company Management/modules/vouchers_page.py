@@ -42,10 +42,17 @@ def issue_dialog(kind, party_type=None, party_id=None, tbl="vo", month=None, amo
         method = c3.selectbox("طريقة الدفع", list(V.METHOD_AR), format_func=lambda k: V.METHOD_AR[k], key=f"vo_m_{kind}")
         ref = c4.text_input("المرجع (رقم الحوالة/الشيك)", key=f"vo_r_{kind}")
         month = st.text_input("شهر العمل المتعلق (مثل 2026-03)", value=m0 or "", key=f"vo_mo_{kind}_{party_id}_{m0}")
-        desc = st.text_area("البيان", key=f"vo_desc_{kind}")
+        category = "settlement"
+        if kind == "payment" and ptype == "other":
+            categories = list(V.ENTRY_CATEGORY_AR)
+            category = st.selectbox("تصنيف الصرف", categories, index=1,
+                                    format_func=V.ENTRY_CATEGORY_AR.get, key=f"vo_cat_{kind}")
+        desc_label = "اسم المصروف أو البيان" if kind == "payment" and ptype == "other" else "البيان"
+        desc = st.text_area(desc_label, key=f"vo_desc_{kind}")
         if st.button("إصدار الإذن", type="primary", key=f"vo_go_{kind}", use_container_width=True):
             try:
-                vid = V.issue_voucher(kind, d, ptype, pid, amount, method, ref, (norm_month(month) or month), desc, other)
+                vid = V.issue_voucher(kind, d, ptype, pid, amount, method, ref, (norm_month(month) or month), desc,
+                                      other, category)
             except ValueError as e:
                 st.error(str(e))
                 return
@@ -74,15 +81,55 @@ def void_dialog(v, tbl="vo"):
     _dlg()
 
 
+def edit_dialog(v, tbl="vo"):
+    @st.dialog("تعديل " + V.KIND_AR[v["kind"]])
+    def _dlg():
+        k = f"vo_edit_{v['id']}_"
+        d = st.date_input("التاريخ", value=date.fromisoformat(v["voucher_date"]), key=k + "date")
+        amount = number_field("المبلغ (ر.س)", k + "amount", value=v["amount"], minimum=0)
+        a, b = st.columns(2)
+        with a:
+            method = st.selectbox("طريقة الدفع", list(V.METHOD_AR), index=list(V.METHOD_AR).index(v["method"]),
+                                  format_func=V.METHOD_AR.get, key=k + "method")
+        with b:
+            reference = st.text_input("المرجع", value=v["reference"] or "", key=k + "reference")
+        month = st.text_input("شهر العمل المتعلق", value=v["month_ref"] or "", key=k + "month")
+        category = v.get("entry_category") or "settlement"
+        if v["kind"] == "payment" and v["party_type"] == "other":
+            categories = list(V.ENTRY_CATEGORY_AR)
+            category = st.selectbox("تصنيف الصرف", categories, index=categories.index(category),
+                                    format_func=V.ENTRY_CATEGORY_AR.get, key=k + "category")
+            other_name = st.text_input("اسم المصروف أو الجهة *", value=v["party_name"], key=k + "party_name")
+        else:
+            other_name = None
+        description = st.text_area("اسم المصروف أو البيان", value=v["description"] or "", key=k + "description")
+        reason = st.text_input("سبب التعديل *", key=k + "reason")
+        if st.button("حفظ التعديل", type="primary", key=k + "save", use_container_width=True):
+            try:
+                V.replace_voucher(v["id"], d, amount, method, reference, norm_month(month) or month,
+                                  description, category, reason, other_name)
+            except ValueError as ex:
+                st.error(str(ex))
+                return
+            st.session_state[_FLASH] = "تم حفظ التصحيح وإلغاء الإذن السابق بسبب موثق."
+            tbump(tbl)
+            st.rerun()
+    _dlg()
+
+
 def voucher_table(rows, tbl, can):
     """List + actions for a set of voucher rows (shared by the vouchers page and the party file)."""
     if not rows:
         st.info("لا توجد إذون.")
         return
-    df = pd.DataFrame([{"الرقم": r["voucher_no"], "النوع": V.KIND_AR[r["kind"]], "التاريخ": r["voucher_date"],
+    df = pd.DataFrame([{"الرقم": r["voucher_no"], "النوع": V.KIND_AR[r["kind"]], "التصنيف": V.ENTRY_CATEGORY_AR.get(r.get("entry_category"), "—"),
+                        "التاريخ": r["voucher_date"],
                         "الجهة": r["party_name"], "المبلغ": float(r["amount"]), "الطريقة": V.METHOD_AR[r["method"]],
-                        "المرجع": r["reference"] or "", "الشهر": r["month_ref"] or "", "الحالة": V.STATUS_AR[r["status"]]} for r in rows])
+                        "المرجع": r["reference"] or "", "الشهر": r["month_ref"] or "", "البيان": r["description"] or "",
+                        "الحالة": V.STATUS_AR[r["status"]]} for r in rows])
     excel_button(df, "vouchers", f"{tbl}_xl")
+    from ui import pdf_button
+    pdf_button(df, "سجل السندات", "vouchers", f"{tbl}_pdf")
     pos = select_table(df, tbl)
     if pos is None:
         st.caption(f"عدد الإذون: {len(rows)} — 💡 اضغط مربع الاختيار أول صف لطباعته أو إلغائه.")
@@ -91,11 +138,14 @@ def voucher_table(rows, tbl, can):
 
     @st.dialog(f"عرض الإذن {v['voucher_no']}")
     def _view_voucher():
-        st.write({"الرقم": v["voucher_no"], "النوع": V.KIND_AR[v["kind"]], "التاريخ": v["voucher_date"],
+        st.write({"الرقم": v["voucher_no"], "النوع": V.KIND_AR[v["kind"]],
+              "التصنيف": V.ENTRY_CATEGORY_AR.get(v.get("entry_category"), "—"), "التاريخ": v["voucher_date"],
                   "الجهة": v["party_name"], "المبلغ": f"{float(v['amount']):,.2f} ر.س",
-                  "الطريقة": V.METHOD_AR[v["method"]], "الحالة": V.STATUS_AR[v["status"]]})
+              "الطريقة": V.METHOD_AR[v["method"]], "البيان": v["description"] or "—",
+              "الحالة": V.STATUS_AR[v["status"]]})
 
     actions = row_action_bar(
+        edit=can and v["status"] == "issued",
         delete=can and v["status"] == "issued",
         print_=True,
         view=True,
@@ -103,6 +153,8 @@ def voucher_table(rows, tbl, can):
     )
     if actions["view"]:
         _view_voucher()
+    if actions["edit"]:
+        edit_dialog(v, tbl)
     if actions["print"]:
         st.download_button("", V.voucher_html(v["id"]).encode("utf-8"),
                            file_name=f"{v['voucher_no']}.html", mime="text/html",

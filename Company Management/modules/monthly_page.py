@@ -8,7 +8,7 @@ import company_hub as hub
 import hub_engine as E
 import security
 from db import query_all
-from ui import flash_set, show_flash, select_table, tbump, excel_button, number_field, row_action_bar
+from ui import flash_set, show_flash, select_table, tbump, excel_button, pdf_button, number_field, row_action_bar
 
 
 def _f(x):
@@ -277,18 +277,21 @@ def _tab_transfers(can):
                         "الموظف": r["full_name"], "المبلغ": r["amount"], "الحالة": "ساري" if r["status"] == "active" else "ملغى",
                         "ملاحظات": r["notes"] or r["void_reason"] or ""} for r in rows])
     excel_button(df, "تحويلات_العملاء", "mo_tr_xl")
+    pdf_button(df, "تحويلات العملاء", "transfers", "mo_tr_pdf")
     pos = select_table(df, "mo_tr")
     st.caption(f"عدد التحويلات: {len(rows)} — إجمالي السارية: {_f(sum(r['amount'] for r in rows if r['status'] == 'active'))}")
     if pos is not None and pos < len(rows):
         row = rows[pos]
         if row["status"] == "active":
-            actions = row_action_bar(edit=can, delete=can, view=True, prefix=f"mo_row_{row['id']}")
+            actions = row_action_bar(edit=can, delete=can, print_=True, view=True, prefix=f"mo_row_{row['id']}")
             if actions["edit"]:
                 _dlg_transfer(row["id"])
             if actions["delete"]:
                 _dlg_void(row)
             if actions["view"]:
                 st.info(f"تحويل {row['id']} — {row['company_name']} — {row['full_name']} — {row['amount']:,.2f} ر.س")
+            if actions["print"]:
+                pdf_button(df.iloc[[pos]], "تحويل العميل", f"transfer_{row['id']}", f"mo_tr_row_pdf_{row['id']}")
         else:
             st.info(f"هذا التحويل ملغى. السبب: {row['void_reason'] or '—'}")
     elif can:

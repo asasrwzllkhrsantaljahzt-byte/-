@@ -6,6 +6,7 @@ import streamlit as st
 import exports as X
 import hub_close as C
 import hub_engine as E
+import vouchers as V
 import app_settings
 from datetime import date
 
@@ -62,13 +63,18 @@ def render():
             st.dataframe(df, use_container_width=True, hide_index=True)
             _downloads(f"balances_{mref or 'all'}", "الأرصدة والمستحقات", [("الأرصدة", df)], f"{mref or 'كل الأشهر'}")
     with t4:
-        years = sorted({m[:4] for m in months}, reverse=True) or [str(date.today().year)]
+        years = sorted({m[:4] for m in set(months) | set(V.other_payment_totals())}, reverse=True) or [str(date.today().year)]
         year = st.selectbox("السنة", years, key="rp_y")
         ydf = C.year_df(year)
         if ydf.empty:
             st.info("لا بيانات لهذه السنة.")
         else:
             st.dataframe(ydf, use_container_width=True, hide_index=True)
-            long = ydf.melt(id_vars="الشهر", value_vars=["الصافي", "هامش الشركة"], var_name="المؤشر", value_name="المبلغ")
+            totals = st.columns(3)
+            totals[0].metric("مصروفات التشغيل", f"{ydf['المصروفات التشغيلية'].sum():,.2f}")
+            totals[1].metric("صافي الربح بعد المصروفات", f"{ydf['صافي الربح بعد المصروفات'].sum():,.2f}")
+            totals[2].metric("مسحوبات المالك (للتسوية السنوية)", f"{ydf['مسحوبات المالك (تسوية سنوية)'].sum():,.2f}")
+            long = ydf.melt(id_vars="الشهر", value_vars=["هامش الشركة قبل المصروفات", "صافي الربح بعد المصروفات"],
+                            var_name="المؤشر", value_name="المبلغ")
             st.altair_chart(alt.Chart(long).mark_bar().encode(x="الشهر:N", y="المبلغ:Q", color="المؤشر:N", xOffset="المؤشر:N"), use_container_width=True)
             _downloads(f"year_{year}", f"التقرير السنوي {year}", [("الأشهر", ydf)], f"سنة {year}")

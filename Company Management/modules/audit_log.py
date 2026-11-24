@@ -12,7 +12,7 @@ def render():
     with c2:
         action_f = st.selectbox("الإجراء", ["الكل", "INSERT", "UPDATE", "DELETE_ATTEMPT", "STATUS_CHANGE"])
 
-    q = "SELECT id, table_name, record_id, action, changed_at, changed_by, note FROM audit_log WHERE 1=1"
+    q = "SELECT table_name, action, changed_at, changed_by, note FROM audit_log WHERE 1=1"
     params = []
     if table_f.strip():
         q += " AND table_name LIKE ?"; params.append(f"%{table_f.strip()}%")
@@ -21,12 +21,23 @@ def render():
     q += " ORDER BY id DESC LIMIT 500"
     rows = query_all(q, tuple(params))
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        table_names = {
+            "users": "المستخدمون", "companies": "الشركات", "employees": "الموظفون",
+            "employee_placements": "تعيينات الموظفين", "client_transfers": "تحويلات العملاء",
+            "vouchers": "السندات", "contracts": "العقود", "invoices": "الفواتير",
+            "documents": "الوثائق", "representatives": "المناديب", "contractors": "المتعهدون",
+        }
+        action_names = {"INSERT": "إضافة", "UPDATE": "تعديل", "DELETE_ATTEMPT": "محاولة حذف",
+                        "STATUS_CHANGE": "تغيير الحالة"}
+        df = pd.DataFrame(rows).rename(columns={
+            "table_name": "القسم",
+            "action": "العملية",
+            "changed_at": "التاريخ والوقت",
+            "changed_by": "المستخدم",
+            "note": "البيان",
+        })
+        df["القسم"] = df["القسم"].map(lambda value: table_names.get(value, value))
+        df["العملية"] = df["العملية"].map(lambda value: action_names.get(value, value))
+        st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("لا توجد سجلات تدقيق بعد.")
-
-    if rows:
-        sel = st.selectbox("عرض تفاصيل سجل (ID)", [r['id'] for r in rows])
-        detail = next((r for r in query_all("SELECT * FROM audit_log WHERE id=?", (sel,))), None)
-        if detail:
-            st.json({k: detail[k] for k in detail.keys()})

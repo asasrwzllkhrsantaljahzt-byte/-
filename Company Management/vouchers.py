@@ -18,6 +18,11 @@ PARTY_TABLE = {"company": ("companies", "name"), "contractor": ("contractors", "
                "representative": ("representatives", "name"), "employee": ("employees", "full_name")}
 METHOD_AR = {"cash": "نقداً", "transfer": "حوالة بنكية", "cheque": "شيك", "other": "أخرى"}
 STATUS_AR = {"issued": "سارٍ", "void": "ملغى"}
+ENTRY_CATEGORY_AR = {
+    "settlement": "تسوية مستحقات",
+    "operating_expense": "مصروف تشغيلي",
+    "owner_draw": "مسحوبات صاحب الشركة",
+}
 
 VOUCHERS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS vouchers (
@@ -33,6 +38,8 @@ CREATE TABLE IF NOT EXISTS vouchers (
     reference TEXT,
     month_ref TEXT,
     description TEXT,
+    entry_category TEXT NOT NULL DEFAULT 'settlement'
+        CHECK (entry_category IN ('settlement','operating_expense','owner_draw')),
     status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','void')),
     void_reason TEXT,
     created_by TEXT,
@@ -65,6 +72,9 @@ def ensure_vouchers_schema():
     conn = get_connection()
     try:
         conn.executescript(VOUCHERS_SCHEMA)
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(vouchers)").fetchall()}
+        if "entry_category" not in columns:
+            conn.execute("ALTER TABLE vouchers ADD COLUMN entry_category TEXT NOT NULL DEFAULT 'settlement'")
         conn.commit()
     finally:
         conn.close()
@@ -90,7 +100,7 @@ def _next_number(conn, kind, year):
 
 
 def issue_voucher(kind, voucher_date, party_type, party_id, amount, method="cash", reference=None, month_ref=None,
-                  description=None, other_name=None) -> int:
+                  description=None, other_name=None, entry_category="settlement") -> int:
     if kind not in KIND_AR:
         raise ValueError("نوع الإذن غير صحيح.")
     if party_type not in PARTY_AR:
@@ -103,6 +113,10 @@ def issue_voucher(kind, voucher_date, party_type, party_id, amount, method="cash
         raise ValueError("المبلغ يجب أن يكون أكبر من صفر.")
     if method not in METHOD_AR:
         raise ValueError("طريقة الدفع غير صحيحة.")
+    if entry_category not in ENTRY_CATEGORY_AR:
+        raise ValueError("تصنيف البند غير صحيح.")
+    if kind != "payment" or party_type != "other":
+        entry_category = "settlement"
     if party_type == "other":
         name, party_id = (other_name or "").strip(), None
         if not name:
@@ -120,9 +134,9 @@ def issue_voucher(kind, voucher_date, party_type, party_id, amount, method="cash
         no = _next_number(conn, kind, voucher_date.year)
         cur = conn.execute(
             """INSERT INTO vouchers(voucher_no, kind, voucher_date, party_type, party_id, party_name, amount, method, reference,
-                                    month_ref, description, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    month_ref, description, entry_category, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (no, kind, _iso(voucher_date), party_type, party_id, name, amount, method, (reference or "").strip() or None,
-             month_ref, (description or "").strip() or None, _current_username()))
+             month_ref, (description or "").strip() or None, entry_category, _current_username()))
         vid = cur.lastrowid
         conn.commit()
     except Exception:
@@ -131,8 +145,66 @@ def issue_voucher(kind, voucher_date, party_type, party_id, amount, method="cash
     finally:
         conn.close()
     log_audit("vouchers", vid, "INSERT", None, {"voucher_no": no, "kind": kind, "party_type": party_type, "party_id": party_id,
-                                                 "amount": amount}, note=f"{KIND_AR[kind]} {no}")
+                                                 "amount": amount, "entry_category": entry_category}, note=f"{KIND_AR[kind]} {no}")
     return vid
+
+
+def replace_voucher(voucher_id, voucher_date, amount, method, reference, month_ref, description, entry_category, reason,
+                    other_name=None):
+    old = query_one("SELECT * FROM vouchers WHERE id=?", (voucher_id,))
+    if not old:
+        raise ValueError("الإذن غير موجود.")
+    if old["status"] != "issued":
+        raise ValueError("لا يمكن تعديل إذن ملغى.")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("سبب التعديل مطلوب.")
+    try:
+        amount = round(float(amount), 2)
+    except (TypeError, ValueError):
+        raise ValueError("المبلغ غير صحيح.")
+    if amount <= 0:
+        raise ValueError("المبلغ يجب أن يكون أكبر من صفر.")
+    if method not in METHOD_AR:
+        raise ValueError("طريقة الدفع غير صحيحة.")
+    if entry_category not in ENTRY_CATEGORY_AR:
+        raise ValueError("تصنيف البند غير صحيح.")
+    if old["kind"] != "payment" or old["party_type"] != "other":
+        entry_category = "settlement"
+    name = ((other_name if other_name is not None else old["party_name"]) or "").strip() if old["party_type"] == "other" else party_name(old["party_type"], old["party_id"])
+    if not name:
+        raise ValueError("الجهة المحددة غير موجودة.")
+    month_ref = (month_ref or "").strip() or None
+    if month_ref and (len(month_ref) != 7 or month_ref[4] != "-" or not (month_ref[:4] + month_ref[5:]).isdigit()):
+        raise ValueError("الشهر بصيغة YYYY-MM.")
+
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute("SELECT * FROM vouchers WHERE id=?", (voucher_id,)).fetchone()
+        if not current or current["status"] != "issued":
+            raise ValueError("تغيّر الإذن أثناء التعديل. حدّث الصفحة ثم أعد المحاولة.")
+        conn.execute("UPDATE vouchers SET status='void', void_reason=? WHERE id=?", (reason, voucher_id))
+        no = _next_number(conn, old["kind"], voucher_date.year)
+        cur = conn.execute(
+            """INSERT INTO vouchers(voucher_no, kind, voucher_date, party_type, party_id, party_name, amount, method, reference,
+                                    month_ref, description, entry_category, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (no, old["kind"], _iso(voucher_date), old["party_type"], old["party_id"], name, amount, method,
+             (reference or "").strip() or None, month_ref, (description or "").strip() or None, entry_category,
+             _current_username()))
+        new_id = cur.lastrowid
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    log_audit("vouchers", voucher_id, "STATUS_CHANGE", {"status": "issued"},
+              {"status": "void", "void_reason": reason}, note=f"تصحيح {KIND_AR[old['kind']]} {old['voucher_no']}")
+    log_audit("vouchers", new_id, "INSERT", None, {"voucher_no": no, "kind": old["kind"],
+              "party_type": old["party_type"], "party_id": old["party_id"], "amount": amount,
+              "entry_category": entry_category}, note=f"بديل {old['voucher_no']}")
+    return new_id
 
 
 def void_voucher(voucher_id, reason) -> str:
@@ -174,6 +246,18 @@ def inbound_kind(party_type) -> str:
 
 def voucher_month(v) -> str:
     return (v["month_ref"] or "").strip() or (v["voucher_date"] or "")[:7]
+
+
+def other_payment_totals() -> dict:
+    totals = {}
+    rows = query_all("""SELECT * FROM vouchers WHERE kind='payment' AND party_type='other' AND status='issued'""")
+    for row in rows:
+        month = voucher_month(row)
+        bucket = totals.setdefault(month, {"operating_expense": 0.0, "owner_draw": 0.0})
+        category = row["entry_category"] or "settlement"
+        if category in bucket:
+            bucket[category] += float(row["amount"])
+    return {month: {key: round(value, 2) for key, value in values.items()} for month, values in totals.items()}
 
 
 def balance_phrase(party_type, balance) -> str:
@@ -323,7 +407,8 @@ h1{{margin:0 0 8px}}table{{width:100%;border-collapse:collapse;margin-top:12px}}
 <tr><td class=k>{who}</td><td colspan=3>{e(v['party_name'])} ({PARTY_AR[v['party_type']]})</td></tr>
 <tr><td class=k>المبلغ</td><td colspan=3 class=amt>{float(v['amount']):,.2f} ر.س</td></tr>
 <tr><td class=k>طريقة الدفع</td><td>{METHOD_AR[v['method']]}</td><td class=k>المرجع</td><td>{e(v['reference'] or '—')}</td></tr>
-<tr><td class=k>الشهر المتعلق</td><td>{e(v['month_ref'] or '—')}</td><td class=k>البيان</td><td>{e(v['description'] or '—')}</td></tr></table>
+<tr><td class=k>الشهر المتعلق</td><td>{e(v['month_ref'] or '—')}</td><td class=k>التصنيف</td><td>{e(ENTRY_CATEGORY_AR.get(v['entry_category'], '—'))}</td></tr>
+<tr><td class=k>البيان</td><td colspan=3>{e(v['description'] or '—')}</td></tr></table>
 <div class=sig><div>المستلم: ____________</div><div>المحاسب: ____________</div></div></div></body></html>"""
 
 

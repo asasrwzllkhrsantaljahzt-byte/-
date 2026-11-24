@@ -139,8 +139,9 @@ def _months_chart(month):
     df = C.year_df(month[:4])
     if len(df) < 2:
         return
-    st.markdown(f"##### 📈 الصافي وهامش الشركة خلال {month[:4]}")
-    long = df.melt(id_vars="الشهر", value_vars=["الصافي", "هامش الشركة"], var_name="المؤشر", value_name="المبلغ")
+    st.markdown(f"##### 📈 هامش الشركة والربح بعد المصروفات خلال {month[:4]}")
+    long = df.melt(id_vars="الشهر", value_vars=["هامش الشركة قبل المصروفات", "صافي الربح بعد المصروفات"],
+                   var_name="المؤشر", value_name="المبلغ")
     st.altair_chart(alt.Chart(long).mark_bar().encode(x="الشهر:N", y="المبلغ:Q", color="المؤشر:N", xOffset="المؤشر:N"),
                     use_container_width=True)
 

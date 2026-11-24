@@ -5,30 +5,43 @@ from ui import FINANCE_GROUPS
 
 
 _DESCRIPTIONS = {
-    "التحويلات والحساب الشهري": "تسجيل تحويلات العملاء ومراجعة الحساب الفعلي لكل شهر.",
+    "الحركات المالية": "تسجيل التحويلات والتحصيل والمدفوعات ومراجعة الحساب الشهري.",
     "مراجعة وإقفال الشهر": "مراجعة النتائج وتثبيت الشهر أو إعادة فتحه بسبب مسجل.",
-    "التحصيل والمدفوعات والسندات": "متابعة الأرصدة والتحصيل والصرف، مع سجل موحد لإذون الاستلام والصرف.",
     "كشوف الحسابات": "عرض وتصدير كشف تفصيلي لحساب جهة محددة.",
     "فواتير العملاء": "إصدار فواتير العملاء ومراجعة الفواتير السابقة.",
     "التقارير المالية والإدارية": "عرض التقارير الشهرية والسنوية والأرصدة.",
 }
 
 
-def _render_settlements(allowed: list):
+def _render_activity(allowed: list):
+    from modules import collections_page, monthly_page, vouchers_page
+    import security
+
     views = [
-        ("متابعة التحصيل والمدفوعات", "التحصيل والمدفوعات"),
+        ("الحساب الشهري والتحويلات", "التحويلات والحساب الشهري"),
+        ("التحصيل والمدفوعات", "التحصيل والمدفوعات"),
         ("سجل السندات", "السندات"),
     ]
-    options = [label for label, page in views if page in allowed]
-    if st.session_state.get("_finance_cash_view") not in options:
-        st.session_state["_finance_cash_view"] = options[0]
-    view = st.radio("العرض", options, horizontal=True, key="_finance_cash_view")
-    if view == "متابعة التحصيل والمدفوعات":
-        from modules import collections_page
-        collections_page.render()
-    else:
-        from modules import vouchers_page
-        vouchers_page.render()
+    views = [view for view in views if view[1] in allowed]
+    tabs = st.tabs([label for label, _ in views])
+    can = security.can_write()
+    for tab, (_, page) in zip(tabs, views):
+        with tab:
+            if page == "التحويلات والحساب الشهري":
+                monthly_page.show_flash()
+                sub_tabs = st.tabs(["الحساب الشهري", "تحويلات العميل"])
+                with sub_tabs[0]:
+                    monthly_page._tab_monthly()
+                with sub_tabs[1]:
+                    monthly_page._tab_transfers(can)
+            elif page == "التحصيل والمدفوعات":
+                sub_tabs = st.tabs(["التحصيل من الموظفين", "المدفوعات والمستحقات"])
+                with sub_tabs[0]:
+                    collections_page._collect_tab(can)
+                with sub_tabs[1]:
+                    collections_page._pay_tab(can)
+            else:
+                vouchers_page.render()
 
 
 def render(allowed: list):
@@ -42,14 +55,11 @@ def render(allowed: list):
     selected = st.selectbox("القسم المالي", options, key="_finance_section")
     st.caption(_DESCRIPTIONS[selected])
 
-    if selected == "التحويلات والحساب الشهري":
-        from modules import monthly_page
-        monthly_page.render()
+    if selected == "الحركات المالية":
+        _render_activity(allowed)
     elif selected == "مراجعة وإقفال الشهر":
         from modules import month_close_page
         month_close_page.render()
-    elif selected == "التحصيل والمدفوعات والسندات":
-        _render_settlements(allowed)
     elif selected == "كشوف الحسابات":
         from modules import statements
         statements.render()
