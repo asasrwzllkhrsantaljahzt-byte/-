@@ -1,5 +1,5 @@
 {
- "build": "30",
+ "build": "31",
  "files": {
   "agreements.py": "1098a48c9f07ca1a6dc1d023a566b92998bb5d0aa32da33b34efcb89f24f662c",
   "alerts.py": "a48ba52668baa2a2b2363561c9a9220576e5797eb0ce25b99d32fe04879fad71",
@@ -25,7 +25,7 @@
   "reset_password.py": "0abf3b2e4c88b526c7f94c8704e2bd7712cb91e1360204d60110c866b0a14525",
   "security.py": "a5130428035fa1670b92a2bc277b6321de3747d03033091a82e7ed24eab73ffb",
   "ui.py": "57f7f4a915e50dcb9e98c9e81d50042bf4b5ffc1ac50af26efd93e2dcfa05f6a",
-  "vouchers.py": "3a71c69a58c19194206acb28f4e3d69d0e9217bb810008d87ef02ab080e7cb03",
+  "vouchers.py": "ea7232b740dbd77ef4b245511bcacc98a082628b82eb8a7ffa06a80b314840bc",
   "تصفير_بيانات_التجربة.py": "7d9858a91ca13bb03674cffc5e1ab50377b189d8150652de0d883a709e136312",
   "modules/__init__.py": "77ff5f4cb9e833f3442dc1578a0efd163f8328ca9d001ea05356b99a0092a91c",
   "modules/agreements_page.py": "0b7b4a64294f6acd9abbc1e430380f43446e161291b0e07391cabbbd53101950",
@@ -42,7 +42,8 @@
   "modules/documents_page.py": "51c71cc6e2db71fd8d562855e69f368a1749558359ad57fe077539e82de0d63e",
   "modules/employees.py": "f144d8b69c6d732d4e61d923b0fc56890e06379121ecd36486dec94a614759f8",
   "modules/entities.py": "4581c394c52f3ef02a493e1eafbf3b0fa6f116e397750fd6a75e7f2c93f035ca",
-  "modules/finance_page.py": "d418e7233ed667601d0c46962f293c08951843d183e7660936b24d6f104fdf79",
+  "modules/finance_page.py": "21c14d3f252e5a24c12a04456a724e17b1b39a0530b4c869dff7d3c9233e9da6",
+  "modules/financial_activity_page.py": "1655e259081d30fd6b5008f4ea8ac1b9b1a481dbc69f45c80b34a6ed3d119424",
   "modules/invoices_page.py": "cd83105889d5a33e47b3820cb37a2b442e219eaa3893a58bf8bc9e0e9afc41c3",
   "modules/master_data_page.py": "767d71ba0b44ece3f3adede2ca2f883048740b2e85ed17fa12858544c3aab6e5",
   "modules/month_close_page.py": "0725a79f6b8b425e60f95463b96c717835d1530b7a1d15c31f9f759409a705a5",

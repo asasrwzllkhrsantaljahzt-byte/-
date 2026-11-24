@@ -150,7 +150,7 @@ def issue_voucher(kind, voucher_date, party_type, party_id, amount, method="cash
 
 
 def replace_voucher(voucher_id, voucher_date, amount, method, reference, month_ref, description, entry_category, reason,
-                    other_name=None):
+                    other_name=None, party_type=None, party_id=None):
     old = query_one("SELECT * FROM vouchers WHERE id=?", (voucher_id,))
     if not old:
         raise ValueError("الإذن غير موجود.")
@@ -169,9 +169,19 @@ def replace_voucher(voucher_id, voucher_date, amount, method, reference, month_r
         raise ValueError("طريقة الدفع غير صحيحة.")
     if entry_category not in ENTRY_CATEGORY_AR:
         raise ValueError("تصنيف البند غير صحيح.")
-    if old["kind"] != "payment" or old["party_type"] != "other":
+    party_type = party_type or old["party_type"]
+    party_id = old["party_id"] if party_type == old["party_type"] and party_id is None else party_id
+    if party_type not in PARTY_AR:
+        raise ValueError("نوع الجهة غير صحيح.")
+    if old["kind"] != "payment" or party_type != "other":
         entry_category = "settlement"
-    name = ((other_name if other_name is not None else old["party_name"]) or "").strip() if old["party_type"] == "other" else party_name(old["party_type"], old["party_id"])
+    if party_type == "other":
+        name, party_id = (other_name if other_name is not None else old["party_name"]), None
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("اسم الجهة مطلوب.")
+    else:
+        name = party_name(party_type, party_id)
     if not name:
         raise ValueError("الجهة المحددة غير موجودة.")
     month_ref = (month_ref or "").strip() or None
@@ -189,7 +199,7 @@ def replace_voucher(voucher_id, voucher_date, amount, method, reference, month_r
         cur = conn.execute(
             """INSERT INTO vouchers(voucher_no, kind, voucher_date, party_type, party_id, party_name, amount, method, reference,
                                     month_ref, description, entry_category, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (no, old["kind"], _iso(voucher_date), old["party_type"], old["party_id"], name, amount, method,
+            (no, old["kind"], _iso(voucher_date), party_type, party_id, name, amount, method,
              (reference or "").strip() or None, month_ref, (description or "").strip() or None, entry_category,
              _current_username()))
         new_id = cur.lastrowid
@@ -202,7 +212,7 @@ def replace_voucher(voucher_id, voucher_date, amount, method, reference, month_r
     log_audit("vouchers", voucher_id, "STATUS_CHANGE", {"status": "issued"},
               {"status": "void", "void_reason": reason}, note=f"تصحيح {KIND_AR[old['kind']]} {old['voucher_no']}")
     log_audit("vouchers", new_id, "INSERT", None, {"voucher_no": no, "kind": old["kind"],
-              "party_type": old["party_type"], "party_id": old["party_id"], "amount": amount,
+              "party_type": party_type, "party_id": party_id, "amount": amount,
               "entry_category": entry_category}, note=f"بديل {old['voucher_no']}")
     return new_id
 

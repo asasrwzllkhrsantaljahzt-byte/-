@@ -92,6 +92,16 @@ def main():
     updated = db.query_one("SELECT amount, party_name FROM vouchers WHERE id=?", (replacement,))
     assert updated == {"amount": 80, "party_name": "مصروف تشغيل معدل"}
     assert V.other_payment_totals()["2026-04"] == {"operating_expense": 80.0, "owner_draw": 20.0}
+    reassigned = V.replace_voucher(p2, D(2026, 4, 7), 100, "transfer", "", None, "تغيير المستفيد",
+                                   "settlement", "تصحيح الجهة", party_type="representative", party_id=rp)
+    assert db.query_one("SELECT status FROM vouchers WHERE id=?", (p2,))["status"] == "void"
+    assert db.query_one("SELECT party_type, party_id FROM vouchers WHERE id=?", (reassigned,)) == {
+        "party_type": "representative", "party_id": rp}
+    from modules import financial_activity_page as activity
+    movements = activity._collect_rows(["التحويلات والحساب الشهري", "التحصيل والمدفوعات", "السندات"])
+    operations = {row["operation"] for row in movements}
+    assert {"transfer", "employee_receipt", "settlement", "operating_expense", "owner_draw"} <= operations
+    assert "نوع الحركة" in activity._display_frame(movements).columns
 
     pb = {r["name"]: r for r in V.party_balances("company")}
     assert pb["شركة العميل"]["due"] == 300 and pb["شركة العميل"]["balance"] == 300

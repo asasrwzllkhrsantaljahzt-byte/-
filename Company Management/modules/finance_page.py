@@ -1,4 +1,4 @@
-"""Single entry point for financial pages, preserving each page's existing behavior."""
+"""Single entry point for financial pages."""
 import streamlit as st
 
 from ui import FINANCE_GROUPS
@@ -13,37 +13,6 @@ _DESCRIPTIONS = {
 }
 
 
-def _render_activity(allowed: list):
-    from modules import collections_page, monthly_page, vouchers_page
-    import security
-
-    views = [
-        ("الحساب الشهري والتحويلات", "التحويلات والحساب الشهري"),
-        ("التحصيل والمدفوعات", "التحصيل والمدفوعات"),
-        ("سجل السندات", "السندات"),
-    ]
-    views = [view for view in views if view[1] in allowed]
-    tabs = st.tabs([label for label, _ in views])
-    can = security.can_write()
-    for tab, (_, page) in zip(tabs, views):
-        with tab:
-            if page == "التحويلات والحساب الشهري":
-                monthly_page.show_flash()
-                sub_tabs = st.tabs(["الحساب الشهري", "تحويلات العميل"])
-                with sub_tabs[0]:
-                    monthly_page._tab_monthly()
-                with sub_tabs[1]:
-                    monthly_page._tab_transfers(can)
-            elif page == "التحصيل والمدفوعات":
-                sub_tabs = st.tabs(["التحصيل من الموظفين", "المدفوعات والمستحقات"])
-                with sub_tabs[0]:
-                    collections_page._collect_tab(can)
-                with sub_tabs[1]:
-                    collections_page._pay_tab(can)
-            else:
-                vouchers_page.render()
-
-
 def render(allowed: list):
     options = [
         title for title, source_pages in FINANCE_GROUPS
@@ -56,7 +25,8 @@ def render(allowed: list):
     st.caption(_DESCRIPTIONS[selected])
 
     if selected == "الحركات المالية":
-        _render_activity(allowed)
+        from modules import financial_activity_page
+        financial_activity_page.render(allowed)
     elif selected == "مراجعة وإقفال الشهر":
         from modules import month_close_page
         month_close_page.render()
