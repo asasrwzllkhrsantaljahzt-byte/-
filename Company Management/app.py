@@ -78,7 +78,13 @@ def _render_toolbar():
     st.markdown(
         """
         <style>
-        header[data-testid="stHeader"] { display: none !important; }
+        header[data-testid="stHeader"] {
+            display: block !important; background: transparent !important;
+            z-index: 10001 !important; pointer-events: none;
+        }
+        header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"] {
+            visibility: visible !important; pointer-events: auto !important;
+        }
         .stApp:has(section[data-testid="stSidebar"][aria-expanded="true"]) {
             --toolbar-sidebar-offset: 21rem;
         }
