@@ -186,9 +186,10 @@ def main():
     # ---- settings
     assert aps.get("org_name") == aps.DEFAULTS["org_name"] and aps.get_int("contract_alert_days") == 30
     good = {"set_org_name": "أساسات روز", "set_cr": "1010", "set_tax": "3000", "set_phone": "05", "set_addr": "وادي الدواسر",
-            "set_alert_days": 45, "set_bk_days": 3}
+            "set_alert_days": 45, "set_bk_days": 3, "set_contract_alerts": False}
     act("modules.settings_page", good, "حفظ الإعدادات")
     assert aps.get("org_name") == "أساسات روز" and aps.get_int("contract_alert_days") == 45 and aps.get_int("backup_reminder_days") == 3
+    assert not aps.get_bool("contract_alerts_enabled")
     assert C.expiry_alerts()["days"] == 45                                              # setting is really used
     aud = db.query_one("SELECT * FROM audit_log WHERE table_name='app_settings' ORDER BY id DESC LIMIT 1")
     assert aud and aud["changed_by"] == "admin" and "أساسات روز" in aud["new_values"]

@@ -17,7 +17,6 @@ ROLES = {"admin": "مدير النظام", "accountant": "محاسب", "viewer":
 PAGES = [
     "لوحة التحكم",
     "المساعد",
-    "ملف الجهة",
     "الشركات والموظفون",
     "المتعهدون",
     "المندوبون",
@@ -27,8 +26,6 @@ PAGES = [
     "التقارير المالية والإدارية",
     "كشوف الحسابات",
     "مراجعة وإقفال الشهر",
-    "التحصيل والمدفوعات",
-    "السندات",
     "فواتير العملاء",
     "النسخ الاحتياطي والاستعادة",
     "سجل التدقيق",
@@ -37,6 +34,12 @@ PAGES = [
 ]
 _ACCOUNTANT_EXCLUDED = {"النسخ الاحتياطي والاستعادة", "سجل التدقيق", "الإعدادات"}
 _VIEWER_PAGES = ["لوحة التحكم", "المساعد", "التقارير المالية والإدارية", "كشوف الحسابات", "حسابي والمستخدمون"]
+REPORT_SECTIONS = {
+    "monthly_summary": "ملخص الشهر",
+    "employee_details": "تفصيل الموظفات",
+    "balances": "الأرصدة والمستحقات",
+    "annual": "التقرير السنوي",
+}
 
 SENSITIVE_KEYS = ("national_id", "id_number", "bank_name", "iban")
 
@@ -57,6 +60,22 @@ CREATE TABLE IF NOT EXISTS users (
     last_login TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS role_page_permissions (
+    role TEXT NOT NULL CHECK (role IN ('admin', 'accountant', 'viewer')),
+    page TEXT NOT NULL,
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (role, page)
+);
+
+CREATE TABLE IF NOT EXISTS role_report_permissions (
+    role TEXT NOT NULL CHECK (role IN ('admin', 'accountant', 'viewer')),
+    section TEXT NOT NULL,
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (role, section)
 );
 
 CREATE TRIGGER IF NOT EXISTS trg_users_no_delete
@@ -272,13 +291,73 @@ def current_user():
 
 
 def allowed_pages(role: str) -> list:
+    default_pages = set(_default_pages(role))
+    if not default_pages:
+        return []
+    overrides = {row["page"]: bool(row["enabled"]) for row in query_all(
+        "SELECT page, enabled FROM role_page_permissions WHERE role=?", (role,))}
+    pages = [page for page in PAGES if overrides.get(page, page in default_pages)]
+    if role != "admin":
+        pages = [page for page in pages if page != "الإعدادات"]
+    if role == "admin":
+        for required in ("الإعدادات", "حسابي والمستخدمون"):
+            if required not in pages:
+                pages.append(required)
+    return pages
+
+
+def _default_pages(role: str) -> list:
     if role == "admin":
         return list(PAGES)
     if role == "accountant":
-        return [p for p in PAGES if p not in _ACCOUNTANT_EXCLUDED]
+        return [page for page in PAGES if page not in _ACCOUNTANT_EXCLUDED]
     if role == "viewer":
         return list(_VIEWER_PAGES)
     return []
+
+
+def allowed_report_sections(role: str) -> list:
+    if "التقارير المالية والإدارية" not in allowed_pages(role):
+        return []
+    overrides = {row["section"]: bool(row["enabled"]) for row in query_all(
+        "SELECT section, enabled FROM role_report_permissions WHERE role=?", (role,))}
+    return [key for key in REPORT_SECTIONS if overrides.get(key, True)]
+
+
+def save_role_permissions(role: str, enabled_pages, enabled_reports) -> None:
+    if role not in ROLES:
+        raise ValueError("الدور غير صحيح.")
+    pages = set(enabled_pages)
+    reports = set(enabled_reports)
+    if pages - set(PAGES) or reports - set(REPORT_SECTIONS):
+        raise ValueError("تم اختيار وظيفة أو تقرير غير معروف.")
+    if role == "admin":
+        pages.update(("الإعدادات", "حسابي والمستخدمون"))
+    else:
+        pages.discard("الإعدادات")
+
+    conn = get_connection()
+    try:
+        conn.executemany(
+            """INSERT INTO role_page_permissions(role, page, enabled, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(role, page) DO UPDATE SET enabled=excluded.enabled,
+                   updated_at=CURRENT_TIMESTAMP""",
+            [(role, page, int(page in pages)) for page in PAGES],
+        )
+        conn.executemany(
+            """INSERT INTO role_report_permissions(role, section, enabled, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(role, section) DO UPDATE SET enabled=excluded.enabled,
+                   updated_at=CURRENT_TIMESTAMP""",
+            [(role, section, int(section in reports)) for section in REPORT_SECTIONS],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    log_audit("role_permissions", 0, "UPDATE", None,
+              {"role": role, "pages": sorted(pages), "reports": sorted(reports)},
+              note=f"تعديل صلاحيات واجهة وتقارير دور {ROLES[role]}")
 
 
 def can_write() -> bool:

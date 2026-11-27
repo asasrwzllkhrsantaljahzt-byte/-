@@ -53,7 +53,7 @@ def _collect_rows(allowed):
                 "status": "ساري" if item["status"] == "active" else "ملغى",
                 "active": item["status"] == "active",
             })
-    if "التحصيل والمدفوعات" in allowed or "السندات" in allowed:
+    if "التحويلات والحساب الشهري" in allowed:
         for item in V.list_vouchers():
             operation = _operation_for_voucher(item)
             rows.append({
@@ -71,6 +71,7 @@ def _collect_rows(allowed):
 
 def _display_frame(rows):
     return pd.DataFrame([{
+        "رقم الحركة": f"{'تحويل' if row['source'] == 'transfer' else 'سند'}-{row['id']:06d}",
         "التاريخ": row["date"], "نوع الحركة": _OPERATION_LABELS.get(row["operation"], "حركة مالية"),
         "الجهة": row["party"], "الموظف": row["employee"], "المبلغ": row["amount"],
         "طريقة الدفع": row["method"], "الشهر": row["month"] or "", "البيان": row["description"],
@@ -195,6 +196,99 @@ def _begin_edit(row, mode):
     st.rerun()
 
 
+def _bulk_preview_frame(items):
+    return pd.DataFrame([{
+        "المسلسل": serial,
+        "صف Excel": item["row"],
+        "الشركة": item.get("company", ""),
+        "الموظف": item.get("employee", ""),
+        "التاريخ": item["date"].isoformat() if item.get("date") else "",
+        "المبلغ": f"{item['amount']:,.2f}" if item.get("amount") is not None else "",
+        "الحالة": "جاهز" if item["action"] == "add" else "خطأ",
+        "التفاصيل": item.get("error", ""),
+    } for serial, item in enumerate(items, start=1)])
+
+
+def _render_bulk_import(operation):
+    import financial_import as FI
+
+    warnings = st.session_state.pop("_fa_bulk_warnings", [])
+    failures = st.session_state.pop("_fa_bulk_failures", [])
+    for row, warning in warnings:
+        st.warning(f"صف Excel {row}: {warning}")
+    for row, error in failures:
+        st.error(f"صف Excel {row}: {error}")
+
+    upload_version = st.session_state.get("_fa_bulk_upload_version", 0)
+    title = "تحويلات العملاء" if operation == "transfer" else "استلامات الموظفين"
+    filename = (
+        "تحويلات_العملاء_بالأسماء.xlsx"
+        if operation == "transfer"
+        else "استلامات_الموظفين_بالأسماء.xlsx"
+    )
+    with st.expander(f"تنزيل نموذج فارغ أو استيراد {title} من Excel"):
+        st.caption(f"الحد الأقصى {FI.MAX_IMPORT_ROWS} حركة في الملف الواحد.")
+        st.caption("املأ ورقة «الحركات» باستخدام أسماء الشركة والموظف كما تظهر في ورقة «المرجع». تظهر المعاينة قبل الحفظ.")
+        if operation == "transfer":
+            st.caption("التحويلان المتطابقان في الشركة والموظف والشهر والتاريخ والمبلغ والملاحظات يُعاملان كحركة مكررة.")
+        else:
+            st.caption("الاستلامان المتطابقان في الموظف والتاريخ والمبلغ وطريقة الدفع والمرجع والشهر والبيان يُعاملان كحركة مكررة.")
+        st.download_button(
+            "⬇️ تنزيل النموذج الفارغ",
+            FI.template_bytes(operation),
+            file_name=filename,
+            key=f"fa_bulk_template_{operation}",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        uploaded = st.file_uploader(
+            "ارفع النموذج بعد تعبئته",
+            type=["xlsx"],
+            key=f"fa_bulk_upload_{operation}_{upload_version}",
+        )
+        if uploaded is None:
+            return
+        try:
+            items = FI.plan(FI.read_sheet(uploaded.getvalue(), operation), operation)
+        except ValueError as ex:
+            st.error(str(ex))
+            return
+        if not items:
+            st.info("النموذج فارغ؛ أضف الحركات في ورقة «الحركات».")
+            return
+
+        preview = _bulk_preview_frame(items)
+        st.dataframe(preview, use_container_width=True, hide_index=True, height=400)
+        valid_count = sum(item["action"] == "add" for item in items)
+        st.caption(f"{valid_count} صف صالح للاستيراد، و{len(items) - valid_count} صف يحتاج إلى تصحيح.")
+        if not valid_count:
+            st.info("لا توجد حركات صالحة للحفظ. صحّح الصفوف التي عليها أخطاء ثم ارفع الملف مجدداً.")
+            return
+        st.info(
+            "اضغط «موافق - اعتماد وحفظ» لحفظ الصفوف الصالحة مباشرة. "
+            "لا تضغط زر «حفظ الحركة» أسفل النموذج لهذه الحركات؛ الصفوف التي عليها أخطاء لن تُحفظ."
+        )
+        if st.button(
+            f"✅ موافق - اعتماد وحفظ {valid_count} حركة",
+            type="primary",
+            key=f"fa_bulk_import_{operation}_{upload_version}",
+        ):
+            result = FI.apply(items, operation)
+            st.session_state["_fa_bulk_failures"] = result["failed"]
+            st.session_state["_fa_bulk_warnings"] = result["warnings"]
+            if result["added"]:
+                flash_set(
+                    f"تم استيراد {result['added']} حركة مالية."
+                    + (f" تعذر استيراد {len(result['failed'])} صف." if result["failed"] else ""),
+                    "_fa_bulk_upload_version",
+                )
+                tbump("fa_ledger")
+                st.rerun()
+            for row, error in result["failed"]:
+                st.error(f"صف Excel {row}: {error}")
+            for row, warning in result["warnings"]:
+                st.warning(f"صف Excel {row}: {warning}")
+
+
 def _render_entry_form(rows, allowed, can):
     show_flash()
     edit_ref = st.session_state.get(_EDIT)
@@ -216,7 +310,7 @@ def _render_entry_form(rows, allowed, can):
         return
 
     transfer_allowed = "التحويلات والحساب الشهري" in allowed
-    vouchers_allowed = "التحصيل والمدفوعات" in allowed or "السندات" in allowed
+    vouchers_allowed = transfer_allowed
     operations = []
     if transfer_allowed:
         operations.append("transfer")
@@ -234,6 +328,9 @@ def _render_entry_form(rows, allowed, can):
     if editing:
         st.selectbox("نوع الحركة", operations, index=operations.index(operation),
                      format_func=_OPERATION_LABELS.get, key=key + "operation", disabled=True)
+
+    if not editing and operation in ("transfer", "employee_receipt"):
+        _render_bulk_import(operation)
 
     with st.container(border=True):
         if edit_ref and edit_ref["mode"] == "void":
@@ -315,8 +412,7 @@ def _render_entry_form(rows, allowed, can):
         st.rerun()
 
 
-def render(allowed):
-    can = security.can_write()
+def _render_movements(allowed, can):
     rows = _collect_rows(allowed)
     _render_entry_form(rows, allowed, can)
     st.divider()
@@ -364,3 +460,8 @@ def render(allowed):
     if actions["print"]:
         pdf_button(df.iloc[[pos]], "تفاصيل الحركة المالية", f"حركة_{row['id']}",
                    f"fa_row_pdf_{row['source']}_{row['id']}")
+
+
+def render(allowed):
+    can = security.can_write()
+    _render_movements(allowed, can)

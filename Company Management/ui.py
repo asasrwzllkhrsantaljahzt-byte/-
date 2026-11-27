@@ -46,6 +46,7 @@ def apply_rtl_style():
             --muted: #647585;
             --line: #e2e8ef;
             --surface: #ffffff;
+            --dialog-sidebar-width: 15rem;
         }
         .stApp {
             direction: rtl; font-family: "Segoe UI", Tahoma, Arial, sans-serif;
@@ -129,7 +130,24 @@ def apply_rtl_style():
             box-shadow: 0 2px 8px rgba(23,43,58,0.035);
         }
         div[data-testid="stAlert"] { border-radius: 11px; }
+        div[data-testid="stDialog"] {
+            box-sizing: border-box !important;
+            padding-right: var(--dialog-sidebar-width) !important;
+            justify-content: center !important;
+            align-items: center !important;
+            background: rgba(14, 33, 48, 0.48) !important;
+            backdrop-filter: blur(3px);
+        }
+        .stApp:has(section[data-testid="stSidebar"][aria-expanded="false"]) div[data-testid="stDialog"],
+        .stApp:has(section[data-testid="stSidebar"][data-collapsed="true"]) div[data-testid="stDialog"] {
+            padding-right: 0 !important;
+        }
         div[data-testid="stDialog"] div[role="dialog"] {
+            width: min(56rem, calc(100vw - var(--dialog-sidebar-width) - 3rem)) !important;
+            max-width: calc(100vw - var(--dialog-sidebar-width) - 3rem) !important;
+            max-height: 86vh !important;
+            overflow-y: auto !important;
+            background: #fff !important;
             border: 1px solid var(--line); border-radius: 16px;
             box-shadow: 0 18px 55px rgba(18,41,59,0.20);
         }
@@ -144,6 +162,12 @@ def apply_rtl_style():
         div[data-testid="stDataFrame"], div[data-testid="stDataFrame"] * { direction: ltr !important; }
         @media (max-width: 768px) {
             .block-container { padding: 1.4rem 1rem 1.2rem; margin-top: 0.4rem; border-radius: 12px; }
+            div[data-testid="stDialog"] { padding-right: 0 !important; }
+            div[data-testid="stDialog"] div[role="dialog"] {
+                width: calc(100vw - 1.5rem) !important;
+                max-width: calc(100vw - 1.5rem) !important;
+                max-height: 90vh !important;
+            }
         }
         </style>
         """.replace("__BG__", _background_css()),
@@ -209,124 +233,20 @@ def toast_flash(key: str):
 
 
 # ---------------------------------------------------------------- navigation
-FINANCE_GROUPS = [
-    ("الحركات المالية", ("التحويلات والحساب الشهري", "التحصيل والمدفوعات", "السندات")),
-    ("مراجعة وإقفال الشهر", ("مراجعة وإقفال الشهر",)),
-    ("كشوف الحسابات", ("كشوف الحسابات",)),
-    ("فواتير العملاء", ("فواتير العملاء",)),
-    ("التقارير المالية والإدارية", ("التقارير المالية والإدارية",)),
-]
-FINANCE_PAGES = tuple(page for _, pages in FINANCE_GROUPS for page in pages)
-_FINANCE_SECTION = {page: title for title, pages in FINANCE_GROUPS for page in pages}
-
 MASTER_DATA_GROUPS = [
     ("الشركات والموظفون", ("الشركات والموظفون",)),
     ("المتعهدون", ("المتعهدون",)),
     ("المندوبون", ("المندوبون",)),
-    ("ملف الجهة", ("ملف الجهة",)),
 ]
-MASTER_DATA_PAGES = tuple(page for _, pages in MASTER_DATA_GROUPS for page in pages)
-_MASTER_DATA_SECTION = {page: title for title, pages in MASTER_DATA_GROUPS for page in pages}
-
-NAV_GROUPS = [
-    ("الرئيسية", "🏠", ["لوحة التحكم", "المساعد"]),
-    ("البيانات الأساسية", "🗂️", ["البيانات الأساسية"]),
-    ("العمليات", "🔗", ["العقود", "الوثائق"]),
-    ("المالية", "�", ["المالية"]),
-    ("النظام", "⚙️", ["الإعدادات والنظام"]),
-]
-
-SYSTEM_PAGES = {"النسخ الاحتياطي والاستعادة", "سجل التدقيق", "الإعدادات", "حسابي والمستخدمون"}
-SYSTEM_TABS = {
-    "الإعدادات": "الإعدادات العامة",
-    "النسخ الاحتياطي والاستعادة": "النسخ الاحتياطي",
-    "حسابي والمستخدمون": "المستخدمون وحسابي",
-    "سجل التدقيق": "سجل التدقيق",
-}
-
-
-def finance_entry_allowed(allowed: list) -> bool:
-    return any(page in allowed for page in FINANCE_PAGES)
-
-
-def master_data_entry_allowed(allowed: list) -> bool:
-    return any(page in allowed for page in MASTER_DATA_PAGES)
-
-
-def grouped_entry_allowed(page: str, allowed: list) -> bool:
-    if page == "المالية":
-        return finance_entry_allowed(allowed)
-    if page == "البيانات الأساسية":
-        return master_data_entry_allowed(allowed)
-    if page == "الإعدادات والنظام":
-        return any(p in allowed for p in SYSTEM_PAGES)
-    return False
 
 
 def set_page(page: str):
-    if page in FINANCE_PAGES:
-        st.session_state["_finance_section"] = _FINANCE_SECTION[page]
-        if page == "السندات":
-            st.session_state["_finance_cash_view"] = "سجل السندات"
-        elif page == "التحصيل والمدفوعات":
-            st.session_state["_finance_cash_view"] = "متابعة التحصيل والمدفوعات"
-        page = "المالية"
-    elif page in MASTER_DATA_PAGES:
-        st.session_state["_master_data_section"] = _MASTER_DATA_SECTION[page]
-        page = "البيانات الأساسية"
-    elif page in SYSTEM_PAGES:
-        st.session_state["_system_tab"] = SYSTEM_TABS[page]
-        page = "الإعدادات والنظام"
+    current = st.session_state.get("_page")
+    if page in ("التسجيل", "العرض"):
+        st.session_state.pop("_return_page", None)
+    elif current in ("التسجيل", "العرض"):
+        st.session_state["_return_page"] = current
     st.session_state["_page"] = page
-
-
-def sidebar_nav(allowed: list) -> str:
-    """Grouped menu with one entry for financial and master-data routes."""
-    cur = st.session_state.get("_page")
-    if cur in FINANCE_PAGES:
-        set_page(cur)
-        cur = "المالية"
-    elif cur in MASTER_DATA_PAGES:
-        set_page(cur)
-        cur = "البيانات الأساسية"
-    finance_visible = finance_entry_allowed(allowed)
-    master_data_visible = master_data_entry_allowed(allowed)
-    system_visible = any(p in allowed for p in SYSTEM_PAGES)
-    if cur not in allowed and not grouped_entry_allowed(cur, allowed):
-        cur = allowed[0]
-        st.session_state["_page"] = cur
-    listed = set()
-    if finance_visible:
-        listed.update(FINANCE_PAGES)
-    if master_data_visible:
-        listed.update(MASTER_DATA_PAGES)
-
-    def btn(p):
-        st.button(p, key=f"nav_{p}", use_container_width=True,
-                  type="primary" if p == cur else "secondary", on_click=set_page, args=(p,))
-
-    for title, icon, pages in NAV_GROUPS:
-        vis = [
-            p for p in pages
-            if p in allowed or (p == "المالية" and finance_visible)
-            or (p == "البيانات الأساسية" and master_data_visible)
-            or (p == "الإعدادات والنظام" and system_visible)
-        ]
-        listed.update(vis)
-        if not vis:
-            continue
-        if len(vis) == 1:
-            btn(vis[0])
-        else:
-            with st.expander(f"{icon} {title}", expanded=cur in vis):
-                for p in vis:
-                    btn(p)
-    rest = [p for p in allowed if p not in listed and p not in SYSTEM_PAGES]
-    if rest:
-        with st.expander("أخرى", expanded=cur in rest):
-            for p in rest:
-                btn(p)
-    return cur
 
 
 def goto_button(label: str, page: str, key: str):

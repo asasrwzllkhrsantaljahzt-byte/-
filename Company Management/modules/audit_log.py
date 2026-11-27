@@ -24,7 +24,7 @@ def render():
         table_names = {
             "users": "المستخدمون", "companies": "الشركات", "employees": "الموظفون",
             "employee_placements": "تعيينات الموظفين", "client_transfers": "تحويلات العملاء",
-            "vouchers": "السندات", "contracts": "العقود", "invoices": "الفواتير",
+            "vouchers": "الحركات المالية", "contracts": "العقود", "invoices": "الفواتير",
             "documents": "الوثائق", "representatives": "المناديب", "contractors": "المتعهدون",
         }
         action_names = {"INSERT": "إضافة", "UPDATE": "تعديل", "DELETE_ATTEMPT": "محاولة حذف",

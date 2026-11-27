@@ -8,6 +8,7 @@ import hub_close as C
 import hub_engine as E
 import vouchers as V
 import app_settings
+import security
 from datetime import date
 
 
@@ -34,8 +35,26 @@ def render():
     res = E.compute_month(month)
     state = "🔒 مقفل" if res.get("closed") else "🔓 مفتوح (أرقام مباشرة)"
     c2.caption(f"حالة الشهر: {state}")
-    t1, t2, t3, t4 = st.tabs(["📊 ملخص الشهر", "👩 تفصيل الموظفات", "💼 الأرصدة والمستحقات", "📈 السنوي"])
-    with t1:
+    sections = security.allowed_report_sections((security.current_user() or {}).get("role", ""))
+    if not sections:
+        st.info("لا توجد أقسام تقارير متاحة لهذا الحساب.")
+        return
+    labels = {
+        "monthly_summary": "📊 ملخص الشهر",
+        "employee_details": "👩 تفصيل الموظفات",
+        "balances": "💼 الأرصدة والمستحقات",
+        "annual": "📈 السنوي",
+    }
+    if st.session_state.get("_report_section") not in sections:
+        st.session_state["_report_section"] = sections[0]
+    section = st.segmented_control(
+        "قسم التقرير",
+        options=sections,
+        format_func=labels.get,
+        key="_report_section",
+        label_visibility="collapsed",
+    )
+    if section == "monthly_summary":
         if not res["companies"]:
             st.info("لا توجد بيانات لهذا الشهر.")
         else:
@@ -46,14 +65,14 @@ def render():
             cdf = C.companies_df(res)
             st.dataframe(cdf, use_container_width=True, hide_index=True)
             _downloads(f"summary_{month}", f"ملخص شهر {month}", [("إجماليات", C.totals_df(res)), ("الشركات", cdf)], f"شهر {month} — {state}")
-    with t2:
+    elif section == "employee_details":
         df = C.employees_df(res)
         if df.empty:
             st.info("لا توجد بيانات.")
         else:
             st.dataframe(df, use_container_width=True, hide_index=True)
             _downloads(f"employees_{month}", f"تفصيل الموظفات — {month}", [("الموظفات", df)], f"شهر {month}")
-    with t3:
+    elif section == "balances":
         scope = st.radio("النطاق", ["الشهر المختار", "كل الأشهر"], horizontal=True, key="rp_scope")
         mref = month if scope == "الشهر المختار" else None
         df = C.balances_df(mref)
@@ -62,7 +81,7 @@ def render():
         else:
             st.dataframe(df, use_container_width=True, hide_index=True)
             _downloads(f"balances_{mref or 'all'}", "الأرصدة والمستحقات", [("الأرصدة", df)], f"{mref or 'كل الأشهر'}")
-    with t4:
+    elif section == "annual":
         years = sorted({m[:4] for m in set(months) | set(V.other_payment_totals())}, reverse=True) or [str(date.today().year)]
         year = st.selectbox("السنة", years, key="rp_y")
         ydf = C.year_df(year)

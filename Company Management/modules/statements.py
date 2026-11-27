@@ -53,7 +53,7 @@ def render():
         for c in ("مستحق", "مسدد", "الرصيد"):
             shown[c] = shown[c].map(lambda x: "" if pd.isna(x) else f"{float(x):,.2f}")
         st.dataframe(shown, use_container_width=True, hide_index=True)
-    st.caption("المستحق يُحسب مباشرة من «التحويلات والحساب الشهري»، والمسدَّد من الإذون السارية.")
+    st.caption("المستحق يُحسب مباشرة من الحساب الشهري، والمسدَّد من الحركات المالية المسجلة.")
     summary = {acc["due_label"]: f"{bal['due']:,.2f}", acc["settled_label"]: f"{bal['settled']:,.2f}",
                acc["balance_label"]: f"{bal['balance']:,.2f}"}
     title = f"كشف حساب — {label.rsplit(' (#', 1)[0]}" + (f" — {mref}" if mref else "")

@@ -10,6 +10,7 @@ from db import query_all, query_one
 COLS = ["الشركة", "اسم الموظف", "رقم الهوية", "الهاتف", "البنك", "الآيبان", "الراتب الأساسي", "التكلفة الفعلية", "المكافأة",
         "المتعهد", "عمولة المتعهد", "جهة العمولة الخارجية", "العمولة الخارجية", "تاريخ البداية", "الحالة", "تاريخ الاستبعاد", "سبب الاستبعاد"]
 REQUIRED = ["الشركة", "اسم الموظف", "الراتب الأساسي", "التكلفة الفعلية", "تاريخ البداية"]
+MAX_IMPORT_ROWS = 50
 STATUS_IN = {"نشط": "active", "active": "active", "": "active", "مستبعد": "ended", "ended": "ended", "موقوف": "ended"}
 
 
@@ -37,6 +38,7 @@ def template_bytes(company_id=None) -> bytes:
         "جهة العمولة الخارجية": "", "العمولة الخارجية": 0, "تاريخ البداية": "2026-01-01", "الحالة": "نشط", "تاريخ الاستبعاد": "", "سبب الاستبعاد": ""}], columns=COLS)
     help_rows = [
         "املأ شيت «الموظفات» (احذف الصف التجريبي). الأعمدة المطلوبة: الشركة، اسم الموظف، الراتب الأساسي، التكلفة الفعلية، تاريخ البداية.",
+        f"الحد الأقصى {MAX_IMPORT_ROWS} موظفاً في الملف الواحد.",
         "اسم الشركة والمتعهد وجهة العمولة يجب أن يطابقوا ما هو مسجل في النظام تماماً (سجّلهم أولاً).",
         "التواريخ بصيغة 2026-01-31. الحالة: نشط أو مستبعد (والمستبعد يحتاج تاريخ استبعاد).",
         "إن كان الموظف موجوداً (بنفس رقم الهوية، أو الاسم داخل نفس الشركة) فسيُحدَّث بدل أن يتكرر.",
@@ -56,11 +58,28 @@ def template_bytes(company_id=None) -> bytes:
 
 
 def _s(v):
-    if v is None or (isinstance(v, float) and pd.isna(v)):
+    if _blank(v):
         return ""
     if isinstance(v, float) and v == int(v):
         return str(int(v))
     return str(v).strip()
+
+
+def _blank(value):
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _ensure_row_limit(df):
+    row_count = sum(not all(_blank(value) for value in row.values()) for row in df.to_dict("records"))
+    if row_count > MAX_IMPORT_ROWS:
+        raise ValueError(f"الحد الأقصى {MAX_IMPORT_ROWS} موظفاً في الملف الواحد؛ الملف يحتوي {row_count} موظفاً.")
 
 
 def _num(v, name):
@@ -98,7 +117,9 @@ def read_sheet(data: bytes) -> pd.DataFrame:
     for c in COLS:
         if c not in df.columns:
             df[c] = None
-    return df.dropna(how="all")
+    df = df.dropna(how="all")
+    _ensure_row_limit(df)
+    return df
 
 
 def _lookup(table, name, kind=None):
@@ -112,6 +133,7 @@ def _lookup(table, name, kind=None):
 
 def plan(df: pd.DataFrame, company_id=None) -> list:
     """One dict per row: {row, name, company, action: add|update|error, error, emp, terms, cid, pid, eid}. Writes nothing."""
+    _ensure_row_limit(df)
     out, seen = [], set()
     for i, r in enumerate(df.to_dict("records"), start=2):
         item = {"row": i, "name": _s(r.get("اسم الموظف")), "company": _s(r.get("الشركة")), "action": "error", "error": ""}

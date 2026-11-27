@@ -33,6 +33,19 @@ def render():
         d4, _x, _y = st.columns(3)
         with d4:
             dues_days = number_field("تنبيه المستحقات غير المسددة بعد (يوماً من نهاية الشهر)", "set_dues_days", value=int(app_settings.get_int("dues_alert_days")), integer=True) or 0
+        st.markdown("**تفعيل أنواع التنبيه**")
+        n1, n2, n3 = st.columns(3)
+        with n1:
+            contract_alerts = st.checkbox("انتهاء العقود", value=app_settings.get_bool("contract_alerts_enabled"), key="set_contract_alerts")
+        with n2:
+            doc_alerts = st.checkbox("انتهاء الوثائق", value=app_settings.get_bool("doc_alerts_enabled"), key="set_doc_alerts")
+        with n3:
+            backup_alerts = st.checkbox("النسخ الاحتياطي", value=app_settings.get_bool("backup_alerts_enabled"), key="set_backup_alerts")
+        n4, n5 = st.columns(2)
+        with n4:
+            month_alerts = st.checkbox("الأشهر غير المقفلة وملاحظات المراجعة", value=app_settings.get_bool("month_alerts_enabled"), key="set_month_alerts")
+        with n5:
+            dues_alerts = st.checkbox("المستحقات والتحصيلات المتأخرة", value=app_settings.get_bool("dues_alerts_enabled"), key="set_dues_alerts")
         st.markdown("**الفواتير**")
         vat = number_field("نسبة ضريبة القيمة المضافة (%)", "set_vat", value=int(app_settings.get_int("vat_rate")), integer=True) or 0
         sub = st.form_submit_button("حفظ الإعدادات", type="primary")
@@ -41,12 +54,20 @@ def render():
             changed = app_settings.save({
                 "org_name": org_name, "org_commercial_register": cr, "org_tax_number": tax,
                 "org_phone": phone, "org_address": addr,
-                "contract_alert_days": int(alert_days), "backup_reminder_days": int(bk_days), "doc_alert_days": int(doc_days), "dues_alert_days": int(dues_days), "vat_rate": int(vat)})
+                "contract_alert_days": int(alert_days), "backup_reminder_days": int(bk_days),
+                "doc_alert_days": int(doc_days), "dues_alert_days": int(dues_days), "vat_rate": int(vat),
+                "contract_alerts_enabled": contract_alerts, "doc_alerts_enabled": doc_alerts,
+                "backup_alerts_enabled": backup_alerts, "month_alerts_enabled": month_alerts,
+                "dues_alerts_enabled": dues_alerts,
+            })
+            st.session_state.pop("_alerts", None)
+            st.session_state.pop("_alerts_ts", None)
             st.session_state["_set_flash"] = "تم حفظ الإعدادات." if changed else "لا توجد تغييرات."
             st.rerun()
         except ValueError as ex:
             st.error(str(ex))
 
+    st.info("التنبيهات داخل التطبيق تعمل محلياً. ربط Gmail أو WhatsApp مؤجل إلى مرحلة لاحقة، ولن تُحفظ بيانات دخول خارجية في قاعدة البيانات.")
     st.markdown("---")
     st.markdown("**الشعار** (يظهر في القائمة وشاشة الدخول والمطبوعات)")
     lp = branding.logo_path()

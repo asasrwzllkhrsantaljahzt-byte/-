@@ -376,6 +376,7 @@ def _dlg_import(cid=None):
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.markdown("**1) نزّل القالب واملأه** — ثم **2) ارفع الملف** وراجع المعاينة — ثم **3) نفّذ الاستيراد**.")
+    st.caption(f"الحد الأقصى {HI.MAX_IMPORT_ROWS} موظفاً في الملف الواحد.")
     st.download_button("⬇️ تنزيل قالب فارغ", HI.template_bytes(), file_name="employees_template.xlsx", key=k + "tpl",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     up = st.file_uploader("ملف Excel المعبأ", type=["xlsx"], key=k + "file")
@@ -388,8 +389,10 @@ def _dlg_import(cid=None):
         st.error(str(ex))
         return
     lab = {"add": "➕ إضافة", "update": "✏️ تحديث", "error": "❌ خطأ"}
-    st.dataframe(pd.DataFrame([{"الصف": i["row"], "الشركة": i["company"], "الموظف": i["name"], "الإجراء": lab[i["action"]],
-                                "ملاحظة": i["error"]} for i in items]), use_container_width=True, hide_index=True)
+    preview = pd.DataFrame([{"المسلسل": serial, "صف Excel": i["row"], "الشركة": i["company"],
+                             "الموظف": i["name"], "الإجراء": lab[i["action"]], "ملاحظة": i["error"]}
+                            for serial, i in enumerate(items, start=1)])
+    st.dataframe(preview, use_container_width=True, hide_index=True, height=400)
     good = [i for i in items if i["action"] != "error"]
     st.caption(f"{sum(1 for i in good if i['action']=='add')} إضافة، {sum(1 for i in good if i['action']=='update')} تحديث، "
                f"{len(items) - len(good)} صف به خطأ (يُتجاهل ويمكنك تصحيحه وإعادة رفع الملف).")
@@ -427,8 +430,9 @@ def _render_list(can):
         st.info("لا توجد شركات مطابقة." if q or flt != "all" else "لا توجد شركات بعد." + (" اضغط «شركة جديدة»." if can else ""))
         return
 
-    W = [2.0, 1.3, 1.5, 0.9, 1.1, 1.3, 1.2, 1.2, 3.0]          # first column = rightmost (RTL)
-    heads = ["الشركة", "الضريبي / الهاتف", "المندوب", "نشطون", "مستبعدون", "إيراد/شهر", "صافي الشركة", "هامش الشركة", ""]
+    W = [0.8, 2.0, 1.3, 1.5, 0.9, 1.1, 1.3, 1.2, 1.2, 3.0]    # first column = rightmost (RTL)
+    heads = ["رقم الشركة", "الشركة", "الضريبي / الهاتف", "المندوب", "نشطون", "مستبعدون",
+             "إيراد/شهر", "صافي الشركة", "هامش الشركة", ""]
     hc = st.columns(W)
     for c, h in zip(hc, heads):
         c.markdown(f"<span style='color:#667;font-size:0.85rem'>{h}</span>", unsafe_allow_html=True)
@@ -440,17 +444,18 @@ def _render_list(can):
         with st.container(border=True):
             c = st.columns(W, vertical_alignment="center")
             label = co["name"] + ("" if co["status"] == "active" else "  (غير نشطة)")
-            if c[0].button(label, key=f"hub_open_{co['id']}", help="فتح الشركة وموظفيها", type="tertiary"):
+            c[0].markdown(str(co["id"]))
+            if c[1].button(label, key=f"hub_open_{co['id']}", help="فتح الشركة وموظفيها", type="tertiary"):
                 st.session_state["hub_open"] = co["id"]
                 st.rerun()
-            c[1].markdown(f"{co['tax_number'] or '—'}<br><span style='color:#667'>{co['phone'] or ''}</span>", unsafe_allow_html=True)
-            c[2].markdown(f"{ex['rep_name']} ({ex['rep_percent']:g}%)" if ex["rep_name"] else "—")
-            c[3].markdown(f"**{ex['employees']}**")
-            c[4].markdown(f"{n_end}")
-            c[5].markdown(_fmt(ex["revenue"]))
-            c[6].markdown(_fmt(ex["net"]))
-            c[7].markdown(f"**{_fmt(ex['margin'])}**")
-            b = c[8].columns(4)
+            c[2].markdown(f"{co['tax_number'] or '—'}<br><span style='color:#667'>{co['phone'] or ''}</span>", unsafe_allow_html=True)
+            c[3].markdown(f"{ex['rep_name']} ({ex['rep_percent']:g}%)" if ex["rep_name"] else "—")
+            c[4].markdown(f"**{ex['employees']}**")
+            c[5].markdown(f"{n_end}")
+            c[6].markdown(_fmt(ex["revenue"]))
+            c[7].markdown(_fmt(ex["net"]))
+            c[8].markdown(f"**{_fmt(ex['margin'])}**")
+            b = c[9].columns(4)
             if b[0].button("📂", key=f"hub_o_{co['id']}", help="فتح"):
                 st.session_state["hub_open"] = co["id"]
                 st.rerun()
@@ -462,7 +467,7 @@ def _render_list(can):
                 _dlg_print(co["id"])
     st.caption(f"عدد الشركات: {len(companies)} — الموظفون النشطون: {tot['act']} — المستبعدون: {tot['end']} — "
                f"إيراد متوقع/شهر: {_fmt(tot['rev'])} — صافي: {_fmt(tot['net'])} — الهامش المتوقع: {_fmt(tot['mar'])}")
-    st.caption("الأرقام «متوقعة» من الاتفاق لو حوّل العميل كاملاً. الأرقام الفعلية في «التحويلات والحساب الشهري» و«التحصيل والمدفوعات».")
+    st.caption("الأرقام «متوقعة» من الاتفاق لو حوّل العميل كاملاً. الأرقام الفعلية في «الحركات المالية».")
 
 
 # ------------------------------------------------------------------ company page
@@ -474,7 +479,7 @@ def _render_company(cid, can):
         st.rerun()
     with st.container(border=True):
         h1, h2 = st.columns([4, 2.4])
-        h1.markdown(f"### 🏢 {co['name']}")
+        h1.markdown(f"### 🏢 {co['name']} — رقم الشركة: {co['id']}")
         with h2:
             e1, e2, e3 = st.columns(3)
             if can and e1.button("✏️ تعديل", key="hub_edit_co"):
@@ -525,7 +530,8 @@ def _render_company(cid, can):
         st.info("لا يوجد موظفون في هذه الشركة بعد." + (" اضغط «إضافة موظف»." if can else ""))
     else:
         df = pd.DataFrame([{
-            "الموظف": r["full_name"], "الجوال": r["phone"] or "", "الحالة": hub.STATUS_AR.get(r["status"], r["status"]),
+            "رقم الموظف": r["employee_id"], "الموظف": r["full_name"], "الجوال": r["phone"] or "",
+            "الحالة": hub.STATUS_AR.get(r["status"], r["status"]),
             "من": r["start_date"], "إلى": r["end_date"] or "",
             "الراتب الأساسي": r["basic_salary"], "التكلفة الفعلية": r["actual_cost"], "الاسترداد": r["refund"],
             "المكافأة": r["bonus"], "المتعهد": r["contractor_name"] or "", "عمولته": r["contractor_commission"],
@@ -562,7 +568,7 @@ def _render_company(cid, can):
     m[2].metric("صافي الشركة", f"{ex['net']:,.2f}")
     m[3].metric(f"المندوب ({ex['rep_percent']:g}%)", f"{ex['rep_amount']:,.2f}")
     st.metric("هامش الشركة المتوقع (الربح)", f"{ex['margin']:,.2f}")
-    st.caption("هذه أرقام متوقعة لو حوّل العميل كاملاً. الأرقام الفعلية في «التحويلات والحساب الشهري».")
+    st.caption("هذه أرقام متوقعة لو حوّل العميل كاملاً. الأرقام الفعلية في «الحركات المالية».")
 
 
 def render():

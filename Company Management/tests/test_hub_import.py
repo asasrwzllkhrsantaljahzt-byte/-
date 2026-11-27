@@ -64,6 +64,16 @@ def main():
     buf = io.BytesIO(); pd.DataFrame([rows[0], rows[0]]).to_excel(buf, sheet_name="الموظفات", index=False)
     assert [i["action"] for i in HI.plan(HI.read_sheet(buf.getvalue()))] == ["update", "error"]
 
+    # A workbook can contain up to 50 non-empty employee rows.
+    bulk_rows = [{
+        "الشركة": "المروة", "اسم الموظف": f"موظف {i}", "الراتب الأساسي": 2000,
+        "التكلفة الفعلية": 1700, "تاريخ البداية": "2026-10-01",
+    } for i in range(50)]
+    bulk_frame = pd.DataFrame(bulk_rows)
+    assert len(HI.plan(bulk_frame)) == 50
+    raises("الحد الأقصى 50", lambda: HI.plan(pd.DataFrame(bulk_rows + [bulk_rows[0]])))
+    raises("الحد الأقصى 50", lambda: HI.read_sheet(_xl(pd.DataFrame(bulk_rows + [bulk_rows[0]]))))
+
     # branding
     assert branding.logo_path() and branding.logo_b64()
     raises("ليس صورة", lambda: branding.save_logo(b"not an image"))

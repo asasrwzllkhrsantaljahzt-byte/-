@@ -1,110 +1,19 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-import app_settings
-import backup
-import security
 import hub_engine as E
+import security
 from db import query_all, query_one
-from ui import goto_button
+from ui import set_page
 
 
 def _fmt(n) -> str:
     return f"{float(n or 0):,.0f}"
 
 
-def _alerts():
-    notes = []
-    try:
-        from modules import contracts
-        al = contracts.expiry_alerts()
-        if al["overdue"]:
-            notes.append(("error", f"{len(al['overdue'])} عقد ساري انتهت مدته ولم يُنهَ — راجع صفحة العقود."))
-        if al["soon"]:
-            notes.append(("warning", f"{len(al['soon'])} عقد ينتهي خلال {al['days']} يوماً."))
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        import documents
-        dal = documents.expiry_alerts()
-        if dal["expired"]:
-            notes.append(("error", f"{len(dal['expired'])} وثيقة منتهية — راجع صفحة الوثائق."))
-        if dal["soon"]:
-            notes.append(("warning", f"{len(dal['soon'])} وثيقة تنتهي خلال {dal['days']} يوماً."))
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        days = app_settings.get_int("backup_reminder_days")
-        items = backup.list_backups()
-        if not items:
-            notes.append(("warning", "لا توجد نسخة احتياطية بعد. أنشئ واحدة من صفحة النسخ الاحتياطي."))
-        else:
-            age = (datetime.now() - datetime.strptime(items[0]["modified"], "%Y-%m-%d %H:%M:%S")).days
-            if age >= days:
-                notes.append(("warning", f"آخر نسخة احتياطية قبل {age} يوماً (حد التذكير {days})."))
-    except Exception:  # noqa: BLE001
-        pass
-    for kind, msg in notes:
-        getattr(st, kind)(msg)
-
-
 def _card(col, label, value, help_text=None):
     with col:
         with st.container(border=True):
             st.metric(label, value, help=help_text)
-
-
-def _setup_checklist():
-    """Shown while the system is still empty: tells the user what to do next."""
-    steps = [
-        ("أضف شركة عميلة", query_one("SELECT COUNT(*) c FROM companies")["c"] > 0, "الشركات والموظفون"),
-        ("أضف موظفاً داخل الشركة", query_one("SELECT COUNT(*) c FROM employee_placements")["c"] > 0, "الشركات والموظفون"),
-        ("سجّل أول تحويل من العميل", query_one("SELECT COUNT(*) c FROM client_transfers")["c"] > 0, "التحويلات والحساب الشهري"),
-    ]
-    if all(done for _, done, _ in steps):
-        return
-    with st.container(border=True):
-        st.markdown("#### 🚀 ابدأ من هنا")
-        cols = st.columns(len(steps))
-        for i, (label, done, page) in enumerate(steps):
-            with cols[i]:
-                st.markdown(("✅ " if done else f"**{i + 1}.** ") + label)
-                if not done and page in security.allowed_pages((security.current_user() or {}).get("role", "")):
-                    goto_button("افتح الصفحة", page, f"dash_step_{i}")
-
-
-_SEARCH = [("employee", "employees", "full_name"), ("company", "companies", "name"),
-           ("contractor", "contractors", "name"), ("representative", "representatives", "name")]
-_PTYPE_PAGE = {"employee": "الشركات والموظفون", "company": "الشركات والموظفون", "contractor": "المتعهدون",
-               "representative": "المندوبون"}
-
-
-def _open_profile(ptype, pid):
-    from modules import party_profile
-    party_profile.open_profile(ptype, pid)
-
-
-def _global_search():
-    import vouchers as V
-    st.markdown("##### 🔎 بحث سريع")
-    q = st.text_input("ابحث", key="dash_search", label_visibility="collapsed",
-                      placeholder="اكتب اسم موظف أو شركة أو متعهد أو مندوب (حرفان على الأقل) ثم اضغط Enter").strip()
-    if len(q) < 2:
-        return
-    like = "%" + q.replace("%", "").replace("_", "") + "%"
-    found = False
-    cols = st.columns(4)
-    n = 0
-    for ptype, table, col in _SEARCH:
-        for r in query_all(f"SELECT id, {col} AS n FROM {table} WHERE {col} LIKE ? ORDER BY {col} LIMIT 6", (like,)):
-            found = True
-            cols[n % 4].button(f"{V.PARTY_AR[ptype]} · {r['n']}", key=f"ds_{ptype}_{r['id']}", on_click=_open_profile,
-                               args=(ptype, r["id"]), use_container_width=True)
-            n += 1
-    if not found:
-        st.caption("لا توجد نتائج مطابقة.")
-    else:
-        st.caption("اضغط على أي نتيجة لفتح ملف الجهة (حسابها وعلاقاتها وإذونها).")
 
 
 def _company_table(res):
@@ -119,18 +28,54 @@ def _company_table(res):
                  column_config={k: st.column_config.Column(alignment="right") for k in rows[0]})
 
 
-def _quick_actions():
-    allowed = security.allowed_pages((security.current_user() or {}).get("role", "viewer"))
-    if not security.can_write():
+REGISTRATION_ACTIONS = [
+    ("الشركات والموظفون", "🏢", "إدارة الشركات وتسجيل الموظفين.", "companies", "#0f766e"),
+    ("المتعهدون", "🤝", "إدارة بيانات المتعهدين ومستحقاتهم.", "contractors", "#2563eb"),
+    ("المندوبون", "🧑‍💼", "إدارة المندوبين ونسب العمولات.", "representatives", "#7c3aed"),
+    ("العقود والوثائق", "📄", "إدارة العقود والوثائق ومواعيد انتهائها.", "contracts_documents", "#d97706"),
+    ("الحركات المالية", "💸", "تسجيل تحويلات العملاء والاستلام والصرف.", "financial", "#059669"),
+    ("فواتير العملاء", "🧾", "إصدار ومراجعة الفواتير.", "invoices", "#be123c"),
+]
+VIEW_ACTIONS = [
+    ("لوحة التحكم", "🏠", "عرض مؤشرات النظام والحسابات.", "dashboard", "#0f766e"),
+    ("مراجعة وإقفال الشهر", "📅", "مراجعة نتائج الشهر وإقفاله.", "month_close", "#dc2626"),
+    ("كشوف الحسابات", "📑", "عرض وتصدير كشوف حسابات الجهات.", "statements", "#4f46e5"),
+    ("التقارير المالية والإدارية", "📊", "التقارير الشهرية والسنوية والأرصدة.", "reports", "#9333ea"),
+]
+
+
+def render_action_menu(allowed, actions):
+    permission_pages = {"الحركات المالية": "التحويلات والحساب الشهري"}
+    visible_actions = [
+        action for action in actions
+        if permission_pages.get(action[0], action[0]) in allowed or (
+            action[0] == "العقود والوثائق" and any(page in allowed for page in ("العقود", "الوثائق"))
+        )
+    ]
+    if not visible_actions:
+        st.info("لا توجد وظائف متاحة لهذا الحساب في هذه القائمة.")
         return
-    from ui import set_page
-    acts = [("➕ شركة جديدة", "الشركات والموظفون"), ("💸 تحويل جديد", "التحويلات والحساب الشهري"),
-            ("📥 تحصيل من موظفة", "التحصيل والمدفوعات"), ("📤 إذن صرف", "التحصيل والمدفوعات"),
-            ("🔒 إقفال الشهر", "مراجعة وإقفال الشهر"), ("📊 التقارير", "التقارير المالية والإدارية")]
-    acts = [a for a in acts if a[1] in allowed]
-    cols = st.columns(len(acts)) if acts else []
-    for i, (lab, pg) in enumerate(acts):
-        cols[i].button(lab, key=f"qa_{i}", use_container_width=True, on_click=set_page, args=(pg,))
+
+    style = "".join(
+        f".st-key-dash_tool_{slug} button{{background:{color}!important;"
+        f"border-color:{color}!important;color:#fff!important;min-height:3rem}}"
+        f".st-key-dash_tool_{slug} button:hover{{filter:brightness(.9)}}"
+        for _, _, _, slug, color in visible_actions
+    )
+    st.markdown(f"<style>{style}</style>", unsafe_allow_html=True)
+    columns = st.columns(3)
+    for index, (title, icon, description, slug, _) in enumerate(visible_actions):
+        with columns[index % len(columns)]:
+            with st.container(border=True):
+                st.markdown(f"### {icon} {title}")
+                st.caption(description)
+                st.button(
+                    f"فتح {title}",
+                    key=f"dash_tool_{slug}",
+                    use_container_width=True,
+                    on_click=set_page,
+                    args=(permission_pages.get(title, title),),
+                )
 
 
 def _months_chart(month):
@@ -147,13 +92,6 @@ def _months_chart(month):
 
 
 def render():
-    can_open = "ملف الجهة" in security.allowed_pages((security.current_user() or {}).get("role", "viewer"))
-    if can_open:
-        _global_search()
-    _alerts()
-    _quick_actions()
-    _setup_checklist()
-
     months = E.month_options()
     head1, head2 = st.columns([3, 1])
     with head2:

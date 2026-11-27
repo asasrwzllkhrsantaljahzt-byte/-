@@ -253,21 +253,13 @@ def render(cfg):
         actions = row_action_bar(
             edit=can,
             delete=can,
-            view=security.allowed_pages(security.current_user()["role"]).__contains__("ملف الجهة"),
             prefix=f"{cfg['key']}_row_{rec['id']}",
         )
         if actions["edit"]:
             edit_dialog(cfg, rec)
         if actions["delete"]:
             delete_dialog(cfg, rec)
-        if actions["view"]:
-            _open_profile(PARTY_OF[cfg["key"]], rec["id"])
         if not can:
             st.info("ليست لديك صلاحية التعديل.")
     elif can:
-        st.caption("💡 اضغط مربع الاختيار أول أي صف لتعديله أو حذفه أو فتح ملفه.")
-
-
-def _open_profile(ptype, pid):
-    from modules import party_profile
-    party_profile.open_profile(ptype, pid)
+        st.caption("💡 اضغط مربع الاختيار أول أي صف لتعديله أو حذفه.")

@@ -98,7 +98,7 @@ def main():
     assert db.query_one("SELECT party_type, party_id FROM vouchers WHERE id=?", (reassigned,)) == {
         "party_type": "representative", "party_id": rp}
     from modules import financial_activity_page as activity
-    movements = activity._collect_rows(["التحويلات والحساب الشهري", "التحصيل والمدفوعات", "السندات"])
+    movements = activity._collect_rows(["التحويلات والحساب الشهري"])
     operations = {row["operation"] for row in movements}
     assert {"transfer", "employee_receipt", "settlement", "operating_expense", "owner_draw"} <= operations
     assert "نوع الحركة" in activity._display_frame(movements).columns

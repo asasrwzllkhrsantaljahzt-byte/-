@@ -137,10 +137,16 @@ def main():
     assert raises(ValueError, lambda: sec.create_user("OWNER", "x", "Another#Pass1", "viewer"))       # case-insensitive duplicate
     assert raises(ValueError, lambda: sec.create_user("bad", "x", "Another#Pass1", "root"))
     assert sec.get_user(acc)["can_view_sensitive"] == 0 and sec.get_user(1)["can_view_sensitive"] == 1
-    assert len(sec.allowed_pages("admin")) == 19 and len(sec.allowed_pages("accountant")) == 16 and "العقود" in sec.allowed_pages("accountant") and "الإعدادات" not in sec.allowed_pages("accountant") and "العقود" not in sec.allowed_pages("viewer")
+    assert len(sec.allowed_pages("admin")) == 16 and len(sec.allowed_pages("accountant")) == 13 and "العقود" in sec.allowed_pages("accountant") and "الإعدادات" not in sec.allowed_pages("accountant") and "العقود" not in sec.allowed_pages("viewer")
+    assert "التحصيل والمدفوعات" not in sec.PAGES and "السندات" not in sec.PAGES
     ap, vp = sec.allowed_pages("accountant"), sec.allowed_pages("viewer")
     assert "التحويلات والحساب الشهري" in ap and "النسخ الاحتياطي والاستعادة" not in ap and "سجل التدقيق" not in ap
     assert "التحويلات والحساب الشهري" not in vp and "لوحة التحكم" in vp and sec.allowed_pages("x") == []
+    sec.save_role_permissions("viewer", vp, ["annual"])
+    assert "العقود" not in sec.allowed_pages("viewer")
+    assert sec.allowed_report_sections("viewer") == ["annual"]
+    sec.save_role_permissions("accountant", set(ap) | {"النسخ الاحتياطي والاستعادة"}, list(sec.REPORT_SECTIONS))
+    assert "النسخ الاحتياطي والاستعادة" in sec.allowed_pages("accountant")
 
     # ---------- login, wrong password, lockout
     u, msg = sec.authenticate("owner", "Owner#Pass1")
@@ -280,7 +286,7 @@ def main():
     print("- first-run setup creates the admin; login is case-insensitive; unknown user == wrong password message")
     print("- lockout after 5 failures (even a correct password is refused), expires, counter resets")
     print("- deactivated user refused and thrown out on the next page run; last active admin cannot be removed; users cannot be deleted")
-    print("- roles: admin 19 pages, accountant 16 (no backup/audit/settings), viewer 5")
+    print("- roles: admin 16 pages, accountant 13 (no backup/audit/settings), viewer 5")
     print("- accountant without permission sees masked IBAN, cannot overwrite it, edits other fields normally")
     print("- audit log never contains ID/IBAN/bank/password hashes, and records who did what")
     shutil.rmtree(tmp, ignore_errors=True)

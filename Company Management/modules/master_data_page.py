@@ -8,7 +8,6 @@ _DESCRIPTIONS = {
     "الشركات والموظفون": "إدارة الشركات وموظفيها وتفاصيل العمل من شاشة الشركة.",
     "المتعهدون": "إدارة بيانات المتعهدين والعمولات الخارجية.",
     "المندوبون": "إدارة بيانات المندوبين وعلاقاتهم بالشركات.",
-    "ملف الجهة": "عرض حساب الجهة وعلاقاتها وإذونها ووثائقها وعقودها.",
 }
 
 
@@ -32,6 +31,3 @@ def render(allowed: list):
     elif selected == "المندوبون":
         from modules import representatives
         representatives.render()
-    elif selected == "ملف الجهة":
-        from modules import party_profile
-        party_profile.render()

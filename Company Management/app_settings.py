@@ -9,9 +9,14 @@ DEFAULTS = {
     "org_phone": "",
     "org_address": "",
     "contract_alert_days": "30",     # warn when an active contract ends within this many days
+    "contract_alerts_enabled": "1",
     "backup_reminder_days": "7",     # warn when the last backup is older than this
+    "backup_alerts_enabled": "1",
     "doc_alert_days": "30",          # warn when a document expires within this many days
+    "doc_alerts_enabled": "1",
     "dues_alert_days": "30",         # warn about dues still unpaid this many days after the month ended
+    "dues_alerts_enabled": "1",
+    "month_alerts_enabled": "1",
     "vat_rate": "15",                # VAT % used on client invoices
 }
 LIMITS = {"contract_alert_days": (1, 365), "backup_reminder_days": (1, 90), "vat_rate": (0, 100), "doc_alert_days": (1, 365), "dues_alert_days": (1, 365)}
@@ -59,6 +64,15 @@ def get_int(key: str) -> int:
     return min(max(v, lo), hi)
 
 
+def get_bool(key: str) -> bool:
+    if key not in DEFAULTS or DEFAULTS[key] not in ("0", "1"):
+        raise KeyError(key)
+    value = get(key)
+    if value not in ("0", "1"):
+        raise ValueError(f"قيمة إعداد التنبيه غير صالحة: {key}")
+    return value == "1"
+
+
 def validate(values: dict) -> list:
     """Returns a list of Arabic error messages (empty when valid)."""
     errors = []
@@ -77,12 +91,19 @@ def validate(values: dict) -> list:
                 raise ValueError
         except (KeyError, TypeError, ValueError):
             errors.append(f"قيمة غير صالحة: يجب أن يكون عدد الأيام بين {lo} و{hi}.")
+    for k in ("contract_alerts_enabled", "backup_alerts_enabled", "doc_alerts_enabled",
+              "dues_alerts_enabled", "month_alerts_enabled"):
+        if k in values and str(values[k]) not in ("0", "1"):
+            errors.append("قيمة إعداد التنبيه غير صالحة.")
     return errors
 
 
 def save(values: dict) -> dict:
     """Validates and saves; returns {key: (old, new)} of what actually changed. Raises ValueError on bad input."""
-    clean = {k: str(values[k]).strip() for k in DEFAULTS if k in values}
+    clean = {
+        k: ("1" if values[k] else "0") if isinstance(values[k], bool) else str(values[k]).strip()
+        for k in DEFAULTS if k in values
+    }
     errors = validate(clean)
     if errors:
         raise ValueError(" ".join(errors))

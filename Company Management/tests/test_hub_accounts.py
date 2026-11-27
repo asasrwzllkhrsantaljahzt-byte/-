@@ -14,7 +14,6 @@ def main():
     db.init_db()
     import company_hub as H, hub_engine as E, vouchers as V, hub_accounts as HA
     H.ensure_hub_schema(); E.ensure_engine_schema(); V.ensure_vouchers_schema()
-    from modules import collections_page as CP
 
     co, _ = H.save_company(None, {"name": "المروة", "work_start_date": D(2026, 1, 1)})
     con = db.execute("INSERT INTO contractors(name) VALUES ('صفاء')")
@@ -36,16 +35,16 @@ def main():
     assert V.party_account("representative", rep)["due"] == 55
 
     # collections screen rows
-    rows = CP.collection_rows("2026-10")
+    rows = HA.collection_rows("2026-10")
     assert len(rows) == 1 and rows[0]["owed"] == 1000 and rows[0]["collected"] == 0 and rows[0]["diff"] == 1000
     V.issue_voucher("receipt", D(2026, 11, 5), "employee", eid, 600, "cash", "", "2026-10", "", None)
-    rows = CP.collection_rows("2026-10")
+    rows = HA.collection_rows("2026-10")
     assert rows[0]["collected"] == 600 and rows[0]["diff"] == 400
     a = V.party_account("employee", eid); assert a["settled"] == 600 and a["balance"] == 400
     assert "400.00" in V.balance_phrase("employee", a["balance"])
     # a receipt without a month counts in the month of its date -> not in October
     V.issue_voucher("receipt", D(2026, 11, 6), "employee", eid, 100, "cash", "", "", "", None)
-    assert CP.collection_rows("2026-10")[0]["collected"] == 600
+    assert HA.collection_rows("2026-10")[0]["collected"] == 600
 
     # payments reduce what we owe
     V.issue_voucher("payment", D(2026, 11, 7), "contractor", con, 100, "transfer", "", "2026-10", "", None)

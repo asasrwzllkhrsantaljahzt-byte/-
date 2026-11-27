@@ -23,7 +23,7 @@ def _dlg_issue():
     cid = names[cname]
     months = invoicing.months_with_accounts(cid)
     if not months:
-        st.warning("لا توجد إيرادات فعلية لهذه الشركة بعد. سجّل تحويلات العميل من «التحويلات والحساب الشهري».")
+        st.warning("لا توجد إيرادات فعلية لهذه الشركة بعد. سجّل تحويلات العميل من «الحركات المالية».")
         return
     month = st.selectbox("الشهر", months, key="inv_month")
     pv = invoicing.preview(cid, month)

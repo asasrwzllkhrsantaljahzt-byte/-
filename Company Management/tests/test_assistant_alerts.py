@@ -14,6 +14,8 @@ def main():
     db.init_db()
     import company_hub as H, hub_engine as E, vouchers as V, assistant as A, alerts as AL, app_settings as aps, security as sec
     aps.ensure_settings_schema(); H.ensure_hub_schema(); E.ensure_engine_schema(); V.ensure_vouchers_schema()
+    import documents as docs
+    docs.ensure_documents_schema()
     co, _ = H.save_company(None, {"name": "المروة", "work_start_date": D(2026, 1, 1)})
     con = db.execute("INSERT INTO contractors(name) VALUES ('صفاء')")
     rep = db.execute("INSERT INTO representatives(name) VALUES ('خالد')")
@@ -47,8 +49,9 @@ def main():
     assert any(i["page"] == "مراجعة وإقفال الشهر" for i in items), texts                    # October not closed
     assert any("بلا أي تحويل" in i["text"] for i in items), texts                           # Norah has none
     assert any(i["page"] == "النسخ الاحتياطي والاستعادة" for i in items)
-    assert not any(i["page"] == "التحصيل والمدفوعات" for i in items)                         # too early
-    assert any(i["page"] == "التحصيل والمدفوعات" for i in AL.collect(D(2026, 12, 5)))      # >30 days after month end
+    assert not any(i["page"] == "التحويلات والحساب الشهري" and "مبالغ لم تُحصَّل" in i["text"] for i in items)
+    assert any(i["page"] == "التحويلات والحساب الشهري" and "مبالغ لم تُحصَّل" in i["text"]
+               for i in AL.collect(D(2026, 12, 5)))                                      # >30 days after month end
     E.close_month("2026-10")
     assert not any(i["page"] == "مراجعة وإقفال الشهر" for i in AL.collect(today))
     # contract + document alerts
@@ -56,6 +59,15 @@ def main():
     db.execute("INSERT INTO contracts(contract_type, party_type, party_id, start_date, end_date, status) VALUES ('client','company',?,?,?,'active')",
                (co, "2026-01-01", "2026-11-25"))
     assert any(i["page"] == "العقود" for i in AL.collect(today))
+    aps.save({**aps.get_all(), "contract_alerts_enabled": False})
+    assert not any(i["page"] == "العقود" for i in AL.collect(today))
+    aps.save({**aps.get_all(), "contract_alerts_enabled": True})
+
+    original_get_bool = aps.get_bool
+    aps.get_bool = lambda _key: (_ for _ in ()).throw(RuntimeError("settings unavailable"))
+    failed = AL.collect(today)
+    aps.get_bool = original_get_bool
+    assert any(item.get("system_error") for item in failed)
     print("test_assistant_alerts: OK")
 
 
