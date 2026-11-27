@@ -49,6 +49,7 @@ def install(inputs, submit):
     st.checkbox = lambda label, *a, key=None, value=False, **k: inputs.get(key, value)
     st.date_input = lambda label, *a, key=None, value=None, **k: inputs.get(key, value)
     st.form_submit_button = lambda label, *a, **k: label == submit
+    st.button = lambda *a, **k: False
 
     st.columns = lambda spec, *a, **k: [Fake() for _ in range(spec if isinstance(spec, int) else len(spec))]
     st.tabs = lambda names: [Fake() for _ in names]

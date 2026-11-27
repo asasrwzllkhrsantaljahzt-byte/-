@@ -1,7 +1,11 @@
+import sqlite3
 import streamlit as st
 import security
 import app_settings
 import branding
+import backup
+import db
+import integrity
 from ui import toast_flash, number_field
 
 
@@ -81,3 +85,64 @@ def render():
             st.rerun()
         except ValueError as ex:
             st.error(str(ex))
+
+    st.markdown("---")
+    st.markdown("**فحص وإصلاح البرنامج**")
+    st.caption("يفحص ملفات الإصدار وسلامة قاعدة البيانات، ثم يعيد تهيئة مخططها وذاكرة التطبيق دون حذف السجلات.")
+    if st.button("فحص وإصلاح الآن", key="settings_repair"):
+        release = integrity.check()
+        if not release.get("no_manifest") and not release.get("ok"):
+            st.error("بعض ملفات البرنامج ناقصة أو مختلفة. أعد تنزيل ملفات الإصدار قبل المتابعة.")
+            for path in release["missing"]:
+                st.caption(f"ملف ناقص: {path}")
+            for path in release["different"]:
+                st.caption(f"ملف مختلف: {path}")
+        else:
+            if release.get("no_manifest"):
+                st.warning("تعذر التحقق من ملفات البرنامج لعدم وجود release_manifest.json.")
+            try:
+                check = db.check_database_integrity()
+                if check != ["ok"]:
+                    st.error("قاعدة البيانات تحتاج إلى استعادة نسخة احتياطية قبل الإصلاح.")
+                    st.code("\n".join(check))
+                else:
+                    db.init_db()
+                    st.cache_resource.clear()
+                    st.cache_data.clear()
+                    st.session_state["_set_flash"] = "اكتمل الفحص وإعادة تهيئة قاعدة البيانات دون حذف بياناتك."
+                    st.rerun()
+            except (OSError, sqlite3.Error) as ex:
+                st.error(f"تعذر إصلاح قاعدة البيانات: {ex}")
+
+    st.markdown("---")
+    st.markdown("**ضبط المصنع**")
+    st.warning(
+        "سيتم إنشاء نسخة احتياطية أولاً، ثم حذف كل السجلات وحسابات المستخدمين والإعدادات من قاعدة البيانات. "
+        "بعدها ستحتاج إلى إنشاء حساب مدير جديد. لن تُحذف ملفات النسخ الاحتياطية."
+    )
+    confirmation = st.text_input(
+        "للتأكيد، اكتب: اضبط المصنع",
+        key="factory_reset_confirmation",
+    )
+    if st.button(
+        "حذف البيانات وإعادة ضبط المصنع",
+        type="primary",
+        key="factory_reset_button",
+        disabled=confirmation.strip() != "اضبط المصنع",
+    ):
+        safety_backup = None
+        try:
+            safety_backup = backup.create_backup("نسخة أمان قبل ضبط المصنع")
+            db.reset_all_data()
+        except (OSError, sqlite3.Error) as ex:
+            st.error(f"تعذر إكمال ضبط المصنع: {ex}")
+            if safety_backup:
+                st.info(f"نسخة الأمان محفوظة في: {safety_backup}")
+        else:
+            st.session_state.clear()
+            st.session_state["_factory_reset_notice"] = (
+                f"تم ضبط المصنع. نسخة الأمان محفوظة في: {safety_backup}"
+            )
+            st.cache_resource.clear()
+            st.cache_data.clear()
+            st.rerun()

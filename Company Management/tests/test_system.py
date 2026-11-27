@@ -82,6 +82,33 @@ def test_backup_restore():
     return None
 
 
+def test_reset_all_data():
+    import security
+    import app_settings
+
+    security.ensure_security_schema()
+    app_settings.ensure_settings_schema()
+    db.execute("INSERT INTO users(username,display_name,role,password_hash) VALUES (?,?,?,?)",
+               ("owner", "مدير", "admin", "test-hash"))
+    db.execute("INSERT INTO app_settings(key,value) VALUES (?,?)", ("org_name", "بيانات اختبار"))
+    db.execute("INSERT INTO contractors(name,status) VALUES (?,?)", ("متعهد اختبار", "active"))
+
+    assert db.check_database_integrity() == ["ok"]
+    db.reset_all_data()
+
+    assert db.query_one("SELECT COUNT(*) AS n FROM users")["n"] == 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM app_settings")["n"] == 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM contractors")["n"] == 0
+    assert db.check_database_integrity() == ["ok"]
+
+    security.ensure_security_schema()
+    assert db.query_one(
+        "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_users_no_delete'"
+    )
+    company_id = db.execute("INSERT INTO companies(name) VALUES (?)", ("شركة بعد التصفير",))
+    assert company_id == 1
+
+
 def test_accounts():
     """End to end on the monthly engine: the user's own example (2000 salary / 1700 cost / bonus 1000 / contractor 100)."""
     import datetime
@@ -113,10 +140,12 @@ def main():
         db.init_db()
         test_save_and_persist()
         test_backup_restore()
+        test_reset_all_data()
         test_accounts()
         print("SYSTEM_TESTS_PASSED")
         print("save_persist=True")
         print("backup_restore=True")
+        print("reset_all_data=True")
         print("accounts=True")
         print(f"temp_env={tmp}")
         return 0

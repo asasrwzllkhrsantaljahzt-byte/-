@@ -50,6 +50,44 @@ def data_version() -> tuple:
     return tuple(out)
 
 
+def check_database_integrity() -> list:
+    conn = get_connection()
+    try:
+        return [row[0] for row in conn.execute("PRAGMA quick_check").fetchall()]
+    finally:
+        conn.close()
+
+
+def reset_all_data() -> None:
+    """Delete every database record while keeping tables for startup schema repair."""
+    conn = get_connection()
+    quote = lambda name: '"' + name.replace('"', '""') + '"'
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN IMMEDIATE")
+        triggers = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (name,) in triggers:
+            conn.execute(f"DROP TRIGGER {quote(name)}")
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (name,) in tables:
+            conn.execute(f"DELETE FROM {quote(name)}")
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'"
+        ).fetchone():
+            conn.execute("DELETE FROM sqlite_sequence")
+        conn.commit()
+        conn.execute("VACUUM")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def get_connection() -> sqlite3.Connection:
     global DB_PATH
     db_path = DB_PATH

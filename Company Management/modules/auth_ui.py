@@ -4,6 +4,9 @@ import security
 
 def _setup_screen():
     st.markdown("## إعداد النظام لأول مرة")
+    notice = st.session_state.pop("_factory_reset_notice", None)
+    if notice:
+        st.success(notice)
     st.info("لا يوجد أي مستخدم بعد. أنشئ حساب **مدير النظام** الأول. احتفظ بكلمة المرور في مكان آمن، "
             "فلا توجد طريقة لاستعادتها إلا بواسطة مدير آخر.")
     with st.form("setup_form"):
