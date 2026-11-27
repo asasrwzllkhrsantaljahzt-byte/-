@@ -109,6 +109,56 @@ def test_reset_all_data():
     assert company_id == 1
 
 
+def test_factory_reset_requires_admin_password():
+    import security
+    from modules import settings_page
+
+    security.ensure_security_schema()
+    security.ITERATIONS = 1000
+    user_id = db.execute(
+        "INSERT INTO users(username,display_name,role,password_hash) VALUES (?,?,?,?)",
+        ("owner", "مدير", "admin", security.hash_password("Strong#Pass123")),
+    )
+    db.execute("INSERT INTO contractors(name,status) VALUES (?,?)", ("بيانات باقية", "active"))
+    backups_before = {path.name for path in backup.BACKUP_DIR.glob("backup_*.db")}
+
+    original_current_user = security.current_user
+    try:
+        security.current_user = lambda: {
+            "id": user_id, "username": "owner", "role": "accountant"
+        }
+        try:
+            settings_page._perform_factory_reset("Strong#Pass123")
+            raise AssertionError("non-admin account must not reset data")
+        except PermissionError:
+            pass
+
+        security.current_user = lambda: {
+            "id": user_id, "username": "owner", "role": "admin"
+        }
+        try:
+            settings_page._perform_factory_reset("Wrong#Pass123")
+            raise AssertionError("wrong password must not reset data")
+        except ValueError:
+            pass
+
+        assert db.query_one("SELECT COUNT(*) AS n FROM contractors")["n"] == 1
+        assert {path.name for path in backup.BACKUP_DIR.glob("backup_*.db")} == backups_before
+
+        safety_backup = settings_page._perform_factory_reset("Strong#Pass123")
+        assert safety_backup.exists()
+        assert safety_backup.name not in backups_before
+        restored_contents = db.query_one("SELECT COUNT(*) AS n FROM contractors")["n"]
+        assert restored_contents == 0
+        saved = sqlite3.connect(str(safety_backup))
+        try:
+            assert saved.execute("SELECT COUNT(*) FROM contractors").fetchone()[0] == 1
+        finally:
+            saved.close()
+    finally:
+        security.current_user = original_current_user
+
+
 def test_accounts():
     """End to end on the monthly engine: the user's own example (2000 salary / 1700 cost / bonus 1000 / contractor 100)."""
     import datetime
@@ -140,11 +190,13 @@ def main():
         db.init_db()
         test_save_and_persist()
         test_backup_restore()
+        test_factory_reset_requires_admin_password()
         test_reset_all_data()
         test_accounts()
         print("SYSTEM_TESTS_PASSED")
         print("save_persist=True")
         print("backup_restore=True")
+        print("factory_reset_admin_password=True")
         print("reset_all_data=True")
         print("accounts=True")
         print(f"temp_env={tmp}")

@@ -9,6 +9,24 @@ import integrity
 from ui import toast_flash, number_field
 
 
+def _perform_factory_reset(password):
+    user = security.current_user()
+    if not user or user.get("role") != "admin":
+        raise PermissionError("ضبط المصنع متاح لمدير النظام فقط.")
+    fresh_user = security.get_user(user["id"])
+    if not fresh_user or fresh_user["role"] != "admin" or not fresh_user["is_active"]:
+        raise PermissionError("ضبط المصنع متاح لمدير النظام النشط فقط.")
+    verified_user, message = security.authenticate(fresh_user["username"], password or "")
+    if not verified_user:
+        raise ValueError(message or "كلمة مرور المدير غير صحيحة.")
+    if verified_user["id"] != fresh_user["id"] or verified_user["role"] != "admin":
+        raise PermissionError("ضبط المصنع متاح لمدير النظام النشط فقط.")
+
+    safety_backup = backup.create_backup("نسخة أمان قبل ضبط المصنع")
+    db.reset_all_data()
+    return safety_backup
+
+
 def render():
     user = security.current_user()
     if not user or user["role"] != "admin":
@@ -117,32 +135,42 @@ def render():
     st.markdown("---")
     st.markdown("**ضبط المصنع**")
     st.warning(
-        "سيتم إنشاء نسخة احتياطية أولاً، ثم حذف كل السجلات وحسابات المستخدمين والإعدادات من قاعدة البيانات. "
-        "بعدها ستحتاج إلى إنشاء حساب مدير جديد. لن تُحذف ملفات النسخ الاحتياطية."
+        "تأكد من إنشاء نسخة احتياطية قبل المتابعة. سينشئ النظام نسخة أمان تلقائياً، "
+        "ثم يحذف كل السجلات وحسابات المستخدمين والإعدادات. ستحتاج بعدها إلى إنشاء حساب مدير جديد. "
+        "لن تُحذف ملفات النسخ الاحتياطية."
     )
-    confirmation = st.text_input(
-        "للتأكيد، اكتب: اضبط المصنع",
-        key="factory_reset_confirmation",
+    if st.button("ضبط المصنع", type="primary", key="factory_reset_button"):
+        _factory_reset_dialog()
+
+
+@st.dialog("تأكيد ضبط المصنع")
+def _factory_reset_dialog():
+    st.warning(
+        "هذه العملية تحذف كل البيانات نهائياً من قاعدة البيانات. "
+        "سيتم إنشاء نسخة أمان تلقائية قبل الحذف، ويمكنك إلغاء العملية بإغلاق النافذة."
     )
-    if st.button(
-        "حذف البيانات وإعادة ضبط المصنع",
-        type="primary",
-        key="factory_reset_button",
-        disabled=confirmation.strip() != "اضبط المصنع",
-    ):
-        safety_backup = None
-        try:
-            safety_backup = backup.create_backup("نسخة أمان قبل ضبط المصنع")
-            db.reset_all_data()
-        except (OSError, sqlite3.Error) as ex:
-            st.error(f"تعذر إكمال ضبط المصنع: {ex}")
-            if safety_backup:
-                st.info(f"نسخة الأمان محفوظة في: {safety_backup}")
-        else:
-            st.session_state.clear()
-            st.session_state["_factory_reset_notice"] = (
-                f"تم ضبط المصنع. نسخة الأمان محفوظة في: {safety_backup}"
-            )
-            st.cache_resource.clear()
-            st.cache_data.clear()
-            st.rerun()
+    with st.form("factory_reset_form"):
+        password = st.text_input(
+            "أدخل كلمة مرور مدير النظام",
+            type="password",
+            key="factory_reset_password",
+        )
+        confirmed = st.form_submit_button("التحقق من كلمة المرور وحذف البيانات", type="primary")
+    if not confirmed:
+        return
+    try:
+        safety_backup = _perform_factory_reset(password)
+    except PermissionError as ex:
+        st.error(str(ex))
+    except ValueError as ex:
+        st.error(str(ex))
+    except (OSError, sqlite3.Error) as ex:
+        st.error(f"تعذر إكمال ضبط المصنع: {ex}")
+    else:
+        st.session_state.clear()
+        st.session_state["_factory_reset_notice"] = (
+            f"تم ضبط المصنع. نسخة الأمان محفوظة في: {safety_backup}"
+        )
+        st.cache_resource.clear()
+        st.cache_data.clear()
+        st.rerun()
